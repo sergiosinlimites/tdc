@@ -1,0 +1,6 @@
+destinationFolder=/usr/local/MATLAB/R2026a
+agreeToLicense=yes
+outputFile=/tmp/mathworks_robust_silent.log
+enableLNU=yes
+improveProducts=yes
+product.Robust_Control_Toolbox

@@ -193,6 +193,20 @@ Procedimiento:
 
 Esto puede bajar orden porque H_inf ve una planta ya mas simple y mas amortiguada.
 
+Con los apuntes de clase del 13 de mayo de 2026, esta alternativa sube de prioridad. El profesor recalco:
+
+```text
+pitch es inverso
+yaw no debe seguir referencia
+washout filter para controlar velocidad
+pitch y roll alrededor de 30 deg
+```
+
+Eso sugiere que una planta ya amortiguada por SAS puede ser una base mas natural para un H_inf externo de menor orden. En ese caso, el orden bajo no se logra solo por `balred`, sino por repartir tareas:
+
+- SAS clasico: amortiguamiento fisico con `q`, `p`, `r`;
+- CAS/H_inf externo: seguimiento y robustez sobre una planta mas calmada.
+
 Ventaja:
 
 - conecta muy bien con las fotos del profesor.
@@ -208,20 +222,20 @@ Riesgo:
 Orden recomendado de pruebas:
 
 1. **Reduccion posterior de K**: probar `balred(K,4)` y validar.
-2. **Reduccion de planta antes de sintesis**: probar plantas reducidas y comparar.
-3. **Sensibilidad mixta S/KS sin W3 dinamico**: medir cuanto baja el orden y cuanto empeora ruido.
-4. **Estructura fija tipo PI+D con `hinfstruct/systune`**: si se quiere una solucion mas cercana a SAS/CAS.
-5. **SAS interno + H_inf externo**: si el profesor insiste en el desarrollo de clase.
+2. **SAS interno + H_inf externo**: ahora es muy relevante por la clase de washout/yaw.
+3. **Reduccion de planta antes de sintesis**: probar plantas reducidas y comparar.
+4. **Sensibilidad mixta S/KS sin W3 dinamico**: medir cuanto baja el orden y cuanto empeora ruido.
+5. **Estructura fija tipo PI+D con `hinfstruct/systune`**: si se quiere una solucion mas cercana a SAS/CAS.
 
 ## 9. Tabla de decision
 
 | Alternativa | Baja orden | Mantiene teoria H_inf | Riesgo | Prioridad |
 |---|---:|---:|---:|---:|
 | Reducir `K` despues | Alta | Media | Medio | 1 |
-| Reducir planta antes | Alta | Alta | Medio | 2 |
-| Simplificar pesos | Alta | Media | Alto | 3 |
-| `hinfstruct/systune` fijo | Total | Alta | Alto trabajo | 4 |
-| SAS + H_inf externo | Media | Alta | Cambia arquitectura | 5 |
+| SAS + H_inf externo | Media | Alta | Cambia arquitectura | 2 |
+| Reducir planta antes | Alta | Alta | Medio | 3 |
+| Simplificar pesos | Alta | Media | Alto | 4 |
+| `hinfstruct/systune` fijo | Total | Alta | Alto trabajo | 5 |
 
 ## 10. Que reportar si se logra orden 4
 

@@ -13,14 +13,28 @@ Recursos de apoyo revisados:
 - `drive/TDC/04. Otros Recursos/UAV_SIM_AEM/Simulation_Lin/`
 - `proyecto-1-pendulo-invertido/`
 
+Estado protegido antes de redisenar:
+
+- `taller1/snapshots/20260513_185409_estado_actual/`
+- Contiene `results/taller1_results.mat`, figuras, scripts `.m`, documentos `.md` y `taller1_uav.slx`.
+- Ese snapshot conserva la version con PID baseline y H_inf actual para poder volver atras si una nueva iteracion empeora.
+
 ## 1. Objetivo del taller
 
 El taller pide disenar y comparar dos controladores para un UAV:
 
-1. Un controlador clasico tipo PID organizado como `SAS/CAS`.
+1. Un controlador clasico tipo PID organizado como `SAS/CAS`, pero ahora disenado por nosotros con Root Locus, Bode y criterio PI+D.
 2. Un controlador robusto `H_inf`.
 
-La comparacion debe hacerse con analisis frecuencial y con simulacion en MATLAB/Simulink. El objetivo de control es seguimiento de referencias tipo set-point para los angulos `theta` y `phi` en el rango `[-40, 40] deg`, rechazando ruido de medicion e incertidumbre o perturbaciones de entrada.
+La comparacion debe hacerse con analisis frecuencial y con simulacion en MATLAB/Simulink. Con los apuntes de clase del 13 de mayo de 2026, el objetivo operativo se ajusta asi:
+
+- `pitch/theta`: mantener referencia de hasta `30 deg`.
+- `roll/phi`: mantener referencia de hasta `30 deg`.
+- `yaw/psi`: no seguir referencia de posicion; mantener yaw alrededor de `0` usando amortiguamiento de velocidad.
+- `r`: controlar/amortiguar velocidad de yaw con washout filter.
+- posiciones como `h`, `psi` o estados cinematicos no deben dominar el diseno; no queremos seguimiento fuerte de posicion, pero si cierta accion de control en media frecuencia.
+
+La version previa con referencias hasta `40 deg` queda guardada en el snapshot. La nueva ruta usara `30 deg` como caso principal y `40 deg` solo como prueba de estres opcional.
 
 ## 2. Decisiones tomadas antes de implementar
 
@@ -45,6 +59,41 @@ Estas decisiones quedan congeladas como punto de partida:
 5. El entregable principal sera un archivo Markdown explicando todo el proceso.
 
    El informe debe explicar teoria, ecuaciones, decisiones de diseno, pesos H_inf, interconexion, sensibilidad, simulaciones, resultados y como revisar/probar/verificar los archivos. Debe entrar a las matematicas necesarias sin desviarse a un "rabbit hole" teorico.
+
+6. El PID/SAS-CAS se redisenara de forma propia.
+
+   Las ganancias baseline del paquete UAV_SIM_AEM quedan solo como referencia historica y respaldo. La nueva comparacion debe usar un PID disenado por nosotros con Root Locus, Bode, amortiguamiento SAS y tracking CAS. Esto evita que la comparacion dependa de valores tomados de otro documento.
+
+7. El yaw no se tratara como tracking de referencia.
+
+   Se mantendra `yaw_ref = 0` o simplemente se evitara imponer una referencia de `psi`. El objetivo principal del canal yaw sera amortiguar velocidad `r` mediante washout filter, porque el profesor indico que "con ese filtro queremos controlar la velocidad".
+
+8. El sistema de pitch debe analizarse como sistema inverso.
+
+   Antes de escoger signos de controlador se revisara la polaridad `elevator -> theta` y `elevator -> q` con `dcgain`, respuesta escalon, Root Locus y Bode. Esto evita cerrar la realimentacion con el signo equivocado.
+
+## 2.1 Apuntes nuevos de clase incorporados
+
+Apuntes del 13 de mayo de 2026:
+
+```text
+Sistema de pitch es inverso.
+Ver washout filter en el libro.
+Pitch mantener en 30 grados.
+Roll mantener en 30 grados.
+Yaw debe ser 0; no debemos seguir referencia.
+Con washout filter queremos controlar la velocidad.
+En posicion no queremos mucho seguir posicion.
+Debe existir cierta senal de control a media frecuencia.
+```
+
+Interpretacion para el proyecto:
+
+- Pitch y roll siguen siendo canales principales de tracking.
+- Yaw queda como canal de amortiguamiento, no como canal de seguimiento de posicion.
+- El washout filter se vuelve importante para yaw y eventualmente para separar velocidad de posicion.
+- Las especificaciones de posicion no deben forzar `S` muy pequeno a frecuencia cero para estados que no queremos seguir.
+- Los pesos o criterios deben permitir control en media frecuencia, no solo seguimiento lento.
 
 ## 3. Datos confirmados de la planta
 
@@ -104,7 +153,7 @@ El enunciado indica:
 
 ```text
 Seguimiento:
-  theta, phi en [-40, 40] deg
+  theta, phi originalmente en [-40, 40] deg
 
 Ancho de banda:
   minimo indicado: 8 Hz
@@ -126,12 +175,41 @@ Comportamiento deseado:
   ejes lo mas desacoplados posible
 ```
 
+Ajuste segun clase:
+
+```text
+Casos nominales principales:
+  theta_ref = 30 deg
+  phi_ref   = 30 deg
+  yaw_ref   = 0 deg o sin seguimiento de psi
+
+Casos de estres opcionales:
+  theta_ref = 40 deg
+  phi_ref   = 40 deg
+```
+
+El limite de control sigue siendo:
+
+```text
+|u| <= 30 deg
+```
+
+Esto significa que una referencia de `30 deg` ya es exigente: el sistema no debe usar todo el actuador de forma permanente solo para sostener el angulo.
+
 Conversion importante:
 
 ```matlab
 u_max = deg2rad(30);
 wb = 2*pi*8;
 wp = 2*pi*6;
+```
+
+Nuevos parametros de planeacion:
+
+```matlab
+theta_ref_nominal = deg2rad(30);
+phi_ref_nominal   = deg2rad(30);
+yaw_ref_nominal   = 0;
 ```
 
 ## 5. Estructura de archivos propuesta
@@ -141,6 +219,8 @@ Se seguira el estilo modular usado en `proyecto-1-pendulo-invertido`.
 ```text
 taller1/
 |-- PLAN_TALLER1_HINF.md
+|-- PLAN_PID_ROOT_LOCUS_SAS_CAS.md
+|-- snapshots/
 |-- main_taller1.m
 |-- parametros_taller1.m
 |-- cargar_modelo_uav.m
@@ -163,6 +243,7 @@ Responsabilidad de cada archivo:
 
 - `main_taller1.m`: ejecuta todo el flujo reproducible.
 - `parametros_taller1.m`: guarda especificaciones, unidades, limites, pesos iniciales y casos de simulacion.
+- `PLAN_PID_ROOT_LOCUS_SAS_CAS.md`: define la ruta para redisenar el PID propio con Root Locus, Bode y PI+D.
 - `cargar_modelo_uav.m`: carga `modelo_lin.mat` y normaliza nombres de entradas/salidas.
 - `seleccionar_canales_uav.m`: crea plantas SISO/SIMO/MIMO candidatas para diseno.
 - `analisis_planta_uav.m`: calcula polos, ceros, `dcgain`, `sigma`, controlabilidad y observaciones de acoplamiento.
@@ -413,7 +494,13 @@ Criterio:
 - Si el diseno SISO por ejes cumple, se mantiene como base.
 - Si hay acoplamiento fuerte, se agrega diseno MIMO 2x2 para `theta/phi`.
 
-### Fase 3. Diseno PID/SAS-CAS
+### Fase 3. Diseno PID/SAS-CAS propio
+
+Objetivo actualizado:
+
+- No usar como diseno final las ganancias baseline del paquete UAV.
+- Disenar ganancias propias con Root Locus, Bode, respuesta temporal y lectura fisica PI+D.
+- Usar baseline solo como referencia para comparar si el nuevo diseno es razonable.
 
 Arquitectura clasica:
 
@@ -439,15 +526,47 @@ u_aileron = PI_phi(phi_ref - phi) - Kp*p
 u_rudder = -Kr*r
 ```
 
-Se debe revisar el signo real de cada canal con `dcgain`, respuesta escalon y polaridad de realimentacion.
+Con los apuntes nuevos, yaw se trata diferente:
+
+```math
+u_rudder = K_{washout}(s) r
+```
+
+sin seguimiento fuerte de `psi_ref`. El washout filter debe dejar pasar componentes de velocidad/transitorios y rechazar sesgos o posicion constante.
+
+Ruta de diseno PID propio:
+
+1. Revisar polaridad de `theta/elevator`, `q/elevator`, `phi/aileron`, `p/aileron`, `r/rudder`.
+2. Para pitch, recordar que el profesor indico que el sistema es inverso; por tanto, comprobar signos antes de cerrar lazo.
+3. Disenar primero SAS con Root Locus:
+   - pitch damper usando `q/elevator`;
+   - roll damper usando `p/aileron`;
+   - yaw damper usando `r/rudder` con washout.
+4. Con la planta amortiguada, disenar CAS:
+   - PI para `theta_ref -> theta`;
+   - PI para `phi_ref -> phi`.
+5. Validar con Bode:
+   - margen de fase;
+   - margen de ganancia;
+   - ancho de banda;
+   - sensibilidad a media frecuencia.
+6. Validar temporalmente:
+   - `theta_ref = 30 deg`;
+   - `phi_ref = 30 deg`;
+   - yaw cercano a `0`;
+   - saturacion menor que `+-30 deg`.
 
 Entregables:
 
-- Ganancias SAS.
-- Ganancias CAS.
+- Root Locus antes/despues de SAS.
+- Diagramas de Bode y margenes.
+- Justificacion de signos.
+- Ganancias SAS disenadas.
+- Ganancias CAS disenadas.
 - Respuesta temporal.
 - `S`, `T`, `K*S`.
 - Esfuerzo de control con saturacion.
+- Comparacion contra el PID baseline guardado en snapshot.
 
 ### Fase 4. Diseno H_inf SISO por eje
 
@@ -547,6 +666,7 @@ Entregables:
 El modelo `taller1_uav.slx` debe incluir:
 
 - Generador de referencias `theta_ref` y `phi_ref`.
+- Yaw sin seguimiento de referencia de posicion; `psi_ref` queda en cero o se omite del CAS.
 - Selector PID/H_inf.
 - Controlador PID/SAS-CAS.
 - Controlador H_inf.
@@ -563,12 +683,14 @@ Casos minimos:
 2. theta_ref = -10 deg, phi_ref = 0
 3. theta_ref = 0, phi_ref =  10 deg
 4. theta_ref = 0, phi_ref = -10 deg
-5. theta_ref =  30 o 40 deg, phi_ref = 0
-6. theta_ref = 0, phi_ref =  30 o 40 deg
+5. theta_ref =  30 deg, phi_ref = 0
+6. theta_ref = 0, phi_ref =  30 deg
 7. theta_ref y phi_ref simultaneos
-8. ruido de medicion activado
-9. perturbacion de entrada activada
-10. comparacion PID vs H_inf
+8. yaw inicial o perturbado, con psi tendiendo a 0 sin tracking agresivo
+9. ruido de medicion activado
+10. perturbacion de entrada activada
+11. comparacion PID propio vs H_inf
+12. casos de estres opcionales a 40 deg
 ```
 
 Metricas:
@@ -616,7 +738,7 @@ Estructura sugerida:
 3. Planta UAV y modelos disponibles.
 4. Convenciones, unidades y senales.
 5. Analisis de planta: polos, ceros, valores singulares.
-6. Diseno clasico PID/SAS-CAS.
+6. Diseno clasico PID/SAS-CAS propio con Root Locus y Bode.
 7. Teoria H_inf necesaria.
 8. Planta generalizada.
 9. Seleccion de pesos `W1`, `W2`, `W3`.
@@ -654,7 +776,7 @@ main_taller1
 El script debe:
 
 - cargar modelos;
-- disenar PID/SAS-CAS;
+- disenar PID/SAS-CAS propio o cargar una version congelada para comparacion;
 - disenar H_inf;
 - ejecutar analisis frecuencial;
 - correr simulaciones;
@@ -719,12 +841,17 @@ Preguntas que el informe debe responder:
 - Que planta se uso para simulacion?
 - Cuales son los canales de entrada/salida?
 - Que polos y ceros limitan el desempeno?
+- Por que pitch se considera inverso?
+- Como se escogieron los signos del SAS/CAS?
+- Que hace el washout filter en yaw?
+- Por que yaw no sigue referencia de posicion?
 - Por que `S` debe ser pequeno a baja frecuencia?
 - Por que `T` debe ser pequeno a alta frecuencia?
 - Que significa `K*S` fisicamente?
 - Como se escogieron `W1`, `W2`, `W3`?
 - Que valor de `gamma` se obtuvo?
 - El controlador respeta `+-30 deg`?
+- El caso nominal de `30 deg` se cumple sin saturacion excesiva?
 - Cual controlador rechaza mejor ruido?
 - Cual controlador usa menos esfuerzo?
 - Hay acoplamiento entre `theta` y `phi`?
@@ -735,7 +862,8 @@ Preguntas que el informe debe responder:
 El taller se considera completo cuando:
 
 - El flujo MATLAB corre desde `main_taller1.m` sin pasos manuales ocultos.
-- El PID/SAS-CAS produce seguimiento estable.
+- El PID/SAS-CAS propio produce seguimiento estable para pitch/roll a 30 deg.
+- El yaw queda amortiguado alrededor de 0 sin seguimiento agresivo de `psi`.
 - El H_inf se sintetiza con Robust Control Toolbox.
 - Se reportan `S`, `T`, `K*S` para ambos controladores.
 - Se usa `sigma` para analisis de valores singulares.
@@ -761,6 +889,23 @@ Mitigacion:
 - Empezar con pesos suaves.
 - Ajustar hasta obtener `gamma` finito.
 - No exigir simultaneamente seguimiento muy rapido, poco control y alto rechazo de ruido si la planta no lo permite.
+
+Riesgo: el nuevo PID propio queda peor que el baseline.
+
+Mitigacion:
+
+- Mantener el snapshot con el baseline anterior.
+- Usar baseline solo como referencia diagnostica, no como entrega principal.
+- Disenar de forma incremental: SAS primero, CAS despues.
+- Verificar Root Locus, Bode, margenes y simulacion acoplada antes de comparar con H_inf.
+
+Riesgo: yaw se controle como posicion cuando el profesor pidio velocidad.
+
+Mitigacion:
+
+- No cerrar un lazo CAS fuerte sobre `psi`.
+- Usar washout filter y realimentacion de `r`.
+- Validar que `r` se amortigue y que `psi` no derive de forma inaceptable.
 
 Riesgo: controlador H_inf de orden alto.
 

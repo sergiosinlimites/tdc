@@ -58,6 +58,15 @@ Para una explicacion conceptual mas pausada de incertidumbre multiplicativa, inc
 README.md
 ```
 
+Documentos de apoyo adicionales:
+
+```text
+README_simulacion_taller1.md
+PLAN_PID_ROOT_LOCUS_SAS_CAS.md
+PLAN_REDUCCION_ORDEN_HINF.md
+NOTAS_SAS_CAS_DESARROLLO_PROFESOR.md
+```
+
 ## 3. Planta UAV
 
 El archivo fuente del taller es:

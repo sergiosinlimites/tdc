@@ -1,0 +1,9 @@
+Snapshot Taller 1 estado actual
+Fecha local: 2026-05-13 18:54:09 America/Bogota
+Contenido:
+- results/taller1_results.mat con cfg, plant, channels, analysis, pid_data, hinf_data, sens, sim_results
+- figures/*.png
+- archivos MATLAB *.m
+- documentos Markdown *.md
+- modelo Simulink taller1_uav.slx si existe
+Motivo: conservar estado antes de rediseñar PID propio Root Locus/Bode y modificar planeación.

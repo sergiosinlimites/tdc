@@ -8,6 +8,10 @@ Archivos relacionados:
 - Notas: `drive/TDC/01. NOTAS DE CLASE/H_inf/Sofrony_c.pdf`
 - Implementacion: `main_taller1.m`
 - Reporte de resultados: `reporte_taller1.md`
+- Guia de simulacion: `README_simulacion_taller1.md`
+- Plan PID propio: `PLAN_PID_ROOT_LOCUS_SAS_CAS.md`
+- Plan de reduccion de orden: `PLAN_REDUCCION_ORDEN_HINF.md`
+- Notas SAS/CAS de clase: `NOTAS_SAS_CAS_DESARROLLO_PROFESOR.md`
 
 ## 0. Antes de H_inf: que son SAS y CAS
 

@@ -64,8 +64,8 @@ function info = channel_info(sys)
 info.order = order(sys);
 info.size = size(sys);
 info.poles = pole(sys);
-info.zeros = zero(sys);
-info.tzeros = tzero(sys);
+info.zeros = tzero(sys);
+info.tzeros = info.zeros;
 info.dcgain = safe_dcgain(sys);
 info.stable = isstable(sys);
 end

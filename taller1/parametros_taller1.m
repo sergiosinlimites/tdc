@@ -40,32 +40,46 @@ cfg.signals.full_inputs = {'throttle', 'elevator', 'rudder', ...
 cfg.signals.full_outputs = {'V', 'beta', 'alpha', 'h', 'phi', 'theta', ...
     'psi', 'p', 'q', 'r', 'gamma', 'ax', 'ay', 'az'};
 
-% Paso 4: cargar las ganancias clasicas del controlador baseline del paquete
-% UAV_SIM_AEM. La fuente es:
-% drive/TDC/04. Otros Recursos/UAV_SIM_AEM/Simulation_Lin/Controllers/
-% baseline_gains.m
-% En ese archivo aparecen como kp_PT, ki_PT, kp_PD para pitch/theta y
-% kp_RT, ki_RT, kp_RD para roll/phi. Aqui se renombran para que coincidan
-% con las variables del taller.
-cfg.pid.kp_theta = -0.84;
-cfg.pid.ki_theta = -0.23;
-cfg.pid.kd_theta = -0.08;
-cfg.pid.kp_phi = -0.52;
-cfg.pid.ki_phi = -0.20;
-cfg.pid.kd_phi = -0.07;
+% Paso 4: ganancias finales del SAS/CAS propio. Ya no se toman del paquete
+% baseline del UAV: se justifican con `diseno_sas_root_locus.m` y
+% `diseno_cas_pi_root_locus.m`.
+cfg.pid.kp_theta = -1.00;
+cfg.pid.ki_theta = -0.30;
+cfg.pid.kd_theta = -0.20;
+cfg.pid.kp_phi = -0.35;
+cfg.pid.ki_phi = -0.18;
+cfg.pid.kd_phi = 0.05;
 cfg.pid.derivative_tau = 0.03;
 cfg.pid.antiwindup = 8.0;
 
 cfg.pid.yaw_damper_gain = 0.065;
 cfg.pid.yaw_damper_pole = -2.0;
 
-% Paso 5: pesos iniciales H_inf. Se escogen suaves para obtener una sintesis
-% factible y luego se revisan contra las especificaciones.
-cfg.hinf.W1_low_gain = 5;
+% Paso 5: pesos H_inf redisenados. W1 fuerza mejor seguimiento en baja
+% frecuencia y W2 se sube para que el control no gane la comparacion solo
+% por saturar actuadores. El gamma resultante se interpreta junto con las
+% metricas temporales, no de forma aislada.
+cfg.hinf.W1_low_gain = 80;
 cfg.hinf.W1_high_gain = 0.05;
-cfg.hinf.W2_gain = 0.15;
-cfg.hinf.W3_low_gain = 0.02;
-cfg.hinf.W3_high_gain = 5;
+cfg.hinf.W1_cross_frequency = cfg.spec.wb;
+cfg.hinf.W2_gain = 1.00;
+cfg.hinf.W2_low_gain = cfg.hinf.W2_gain;
+cfg.hinf.W2_high_gain = cfg.hinf.W2_gain;
+cfg.hinf.W2_cross_frequency = 8;
+cfg.hinf.W3_low_gain = 0.005;
+cfg.hinf.W3_high_gain = 15;
+cfg.hinf.W3_cross_frequency = cfg.spec.wp;
+
+% Pesos por eje. Theta conserva el diseno redisenado actual; phi usa la
+% iteracion seleccionada del barrido: mas fuerza de seguimiento en baja
+% frecuencia y mayor penalizacion de aileron en alta frecuencia.
+cfg.hinf.theta = cfg.hinf;
+cfg.hinf.phi = cfg.hinf.theta;
+cfg.hinf.phi.W1_low_gain = 220;
+cfg.hinf.phi.W2_gain = 0.80;
+cfg.hinf.phi.W2_low_gain = 0.80;
+cfg.hinf.phi.W2_high_gain = 3.20;
+cfg.hinf.phi.W2_cross_frequency = cfg.spec.wp;
 
 % Paso 4: parametros de simulacion temporal y escenarios de referencia.
 cfg.sim.t_final = 12.0;
@@ -88,9 +102,12 @@ scenarios(2) = scenario('theta_minus_10', -10, 0, base_noise, base_dist);
 scenarios(3) = scenario('phi_10', 0, 10, base_noise, base_dist);
 scenarios(4) = scenario('phi_minus_10', 0, -10, base_noise, base_dist);
 scenarios(5) = scenario('theta_phi_10', 10, 10, base_noise, base_dist);
-scenarios(6) = scenario('theta_40', 40, 0, base_noise, base_dist);
-scenarios(7) = scenario('phi_40', 0, 40, base_noise, base_dist);
-scenarios(8) = scenario('noise_disturbance', 10, 10, true, true);
+scenarios(6) = scenario('theta_30', 30, 0, base_noise, base_dist);
+scenarios(7) = scenario('phi_30', 0, 30, base_noise, base_dist);
+scenarios(8) = scenario('theta_phi_30', 30, 30, base_noise, base_dist);
+scenarios(9) = scenario('theta_40', 40, 0, base_noise, base_dist);
+scenarios(10) = scenario('phi_40', 0, 40, base_noise, base_dist);
+scenarios(11) = scenario('noise_disturbance', 10, 10, true, true);
 end
 
 function s = scenario(name, theta_deg, phi_deg, noise_enabled, disturbance_enabled)

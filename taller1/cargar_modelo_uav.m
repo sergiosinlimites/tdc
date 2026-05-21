@@ -8,7 +8,6 @@ end
 
 % Paso 2: cargar el .mat y confirmar que contiene los tres modelos usados.
 data = load(cfg.data.model_path);
-data
 required = {'linmodel', 'latmod', 'longmod'};
 for k = 1:numel(required)
     if ~isfield(data, required{k})

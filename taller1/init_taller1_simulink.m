@@ -6,6 +6,7 @@ addpath(project_dir);
 
 % Paso 2: reconstruir la misma configuracion usada por main_taller1.
 cfg = parametros_taller1(project_dir);
+cfg.export_design_figures = false;
 plant = cargar_modelo_uav(cfg);
 channels = seleccionar_canales_uav(plant, cfg);
 pid_data = diseno_pid_sas_cas(channels, cfg);
@@ -30,9 +31,14 @@ D_sim = zeros(5, size(B_full, 2));
 yaw_tf = zpk(0, cfg.pid.yaw_damper_pole, cfg.pid.yaw_damper_gain);
 [Kyaw_A, Kyaw_B, Kyaw_C, Kyaw_D] = ssdata(ss(yaw_tf));
 
-% Paso 6: convertir PID a numerador/denominador para bloques Transfer Fcn.
-[pid_theta_num, pid_theta_den] = tfdata(pid_data.K_theta, 'v');
-[pid_phi_num, pid_phi_den] = tfdata(pid_data.K_phi, 'v');
+% Paso 6: convertir CAS PI y SAS D a variables explicitas de Simulink.
+s = tf('s');
+CAS_PI_theta = cfg.pid.kp_theta + cfg.pid.ki_theta/s;
+CAS_PI_phi = cfg.pid.kp_phi + cfg.pid.ki_phi/s;
+[cas_pi_theta_num, cas_pi_theta_den] = tfdata(CAS_PI_theta, 'v');
+[cas_pi_phi_num, cas_pi_phi_den] = tfdata(CAS_PI_phi, 'v');
+sas_D_q = cfg.pid.kd_theta;
+sas_D_p = cfg.pid.kd_phi;
 
 % Paso 7: definir referencias, saturacion, ruido y perturbacion del modelo.
 theta_ref_step = deg2rad(10);

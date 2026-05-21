@@ -16,6 +16,7 @@ plot_sensitivities(sens, cfg);
 
 % Paso 3: exportar comparaciones temporales PID vs H_inf.
 plot_time_comparisons(sim_results, cfg);
+plot_final_comparisons(sim_results, cfg);
 end
 
 function plot_sigma_plants(channels, cfg)
@@ -40,8 +41,9 @@ end
 
 function plot_sensitivities(sens, cfg)
 % Crea figuras separadas por eje y una figura resumida comparativa.
-plot_axis_sens('theta', sens.theta, sens.weights, cfg);
-plot_axis_sens('phi', sens.phi, sens.weights, cfg);
+plot_axis_sens('theta', sens.theta, weights_for_axis(sens.weights, ...
+    'theta'), cfg);
+plot_axis_sens('phi', sens.phi, weights_for_axis(sens.weights, 'phi'), cfg);
 
 fig = make_white_figure('Comparacion S T KS PID Hinf');
 tiledlayout(3, 2);
@@ -53,6 +55,15 @@ plot_compare_tile(sens.theta.pid.KS, sens.theta.hinf.KS, 'KS theta');
 plot_compare_tile(sens.phi.pid.KS, sens.phi.hinf.KS, 'KS phi');
 export_png(fig, fullfile(cfg.figures_dir, 'comparacion_sensibilidades.png'));
 close(fig);
+end
+
+function axis_weights = weights_for_axis(weights, axis_name)
+%WEIGHTS_FOR_AXIS Mantiene compatibilidad con resultados sin pesos por eje.
+if isfield(weights, axis_name)
+    axis_weights = weights.(axis_name);
+else
+    axis_weights = weights;
+end
 end
 
 function plot_axis_sens(axis_name, axis_sens, weights, cfg)
@@ -80,7 +91,7 @@ nexttile;
 plot_sigma_response(axis_sens.pid.KS, 'b-', 'PID', w);
 hold on;
 plot_sigma_response(axis_sens.hinf.KS, 'r--', 'Hinf', w);
-plot_sigma_response(tf(1/weights.W2), 'k:', '1/W2', w);
+plot_sigma_response(inv_weight(weights.W2), 'k:', '1/W2', w);
 style_axes();
 legend('PID', 'Hinf', '1/W2', 'Location', 'best');
 title(['K*S - ' axis_name]);
@@ -104,8 +115,9 @@ end
 function plot_time_comparisons(sim_results, cfg)
 % Selecciona los escenarios mas informativos para guardar como figuras.
 names = {sim_results.pid.name};
-selected = {'theta_10', 'phi_10', 'theta_phi_10', 'theta_40', ...
-    'phi_40', 'noise_disturbance'};
+selected = {'theta_10', 'phi_10', 'theta_phi_10', 'theta_30', ...
+    'phi_30', 'theta_phi_30', 'theta_40', 'phi_40', ...
+    'noise_disturbance'};
 
 for i = 1:numel(selected)
     idx = find(strcmp(names, selected{i}), 1);
@@ -127,7 +139,7 @@ plot(pid_sim.t, pid_sim.theta_deg, 'b-', 'LineWidth', 1.3);
 plot(hinf_sim.t, hinf_sim.theta_deg, 'r--', 'LineWidth', 1.3);
 style_axes();
 ylabel('theta [deg]');
-legend('ref', 'PID', 'Hinf', 'Location', 'best');
+legend('ref', 'SAS/CAS', 'Hinf', 'Location', 'best');
 
 nexttile;
 plot(pid_sim.t, pid_sim.phi_ref_deg, 'k:', 'LineWidth', 1.6); hold on;
@@ -207,4 +219,108 @@ function export_png(fig, filename)
 % Exporta siempre con fondo blanco para evitar depender del tema de MATLAB.
 exportgraphics(fig, filename, 'BackgroundColor', 'white', ...
     'Resolution', 200);
+end
+
+function W_inv = inv_weight(W)
+if isa(W, 'DynamicSystem')
+    W_inv = 1/W;
+else
+    W_inv = tf(1/W);
+end
+end
+
+function plot_final_comparisons(sim_results, cfg)
+% Figuras resumidas para defender conclusiones sin revisar cada png.
+plot_rms_summary(sim_results, cfg);
+plot_saturation_summary(sim_results, cfg);
+plot_gamma_summary(cfg);
+end
+
+function plot_rms_summary(sim_results, cfg)
+selected = {'theta_10', 'phi_10', 'theta_phi_10', 'theta_30', ...
+    'phi_30', 'theta_phi_30', 'noise_disturbance'};
+[labels, pid_theta, pid_phi, hinf_theta, hinf_phi] = ...
+    collect_rms(sim_results, selected);
+
+fig = make_white_figure('Comparacion temporal final');
+tiledlayout(2, 1);
+nexttile;
+bar(categorical(labels), [pid_theta(:), hinf_theta(:)]);
+ylabel('RMS theta [deg]');
+legend('SAS/CAS', 'Hinf', 'Location', 'best');
+style_axes();
+nexttile;
+bar(categorical(labels), [pid_phi(:), hinf_phi(:)]);
+ylabel('RMS phi [deg]');
+legend('SAS/CAS', 'Hinf', 'Location', 'best');
+style_axes();
+export_png(fig, fullfile(cfg.figures_dir, 'comparacion_temporal_final.png'));
+close(fig);
+end
+
+function plot_saturation_summary(sim_results, cfg)
+selected = {'theta_10', 'phi_10', 'theta_phi_10', 'theta_30', ...
+    'phi_30', 'theta_phi_30', 'theta_40', 'phi_40', ...
+    'noise_disturbance'};
+labels = selected;
+pid_sat = zeros(size(selected));
+hinf_sat = zeros(size(selected));
+for k = 1:numel(selected)
+    idx_pid = find(strcmp({sim_results.pid.name}, selected{k}), 1);
+    idx_hinf = find(strcmp({sim_results.hinf.name}, selected{k}), 1);
+    pid_sat(k) = 100*sim_results.pid(idx_pid).metrics.sat_fraction;
+    hinf_sat(k) = 100*sim_results.hinf(idx_hinf).metrics.sat_fraction;
+end
+
+fig = make_white_figure('Comparacion saturacion final');
+bar(categorical(labels), [pid_sat(:), hinf_sat(:)]);
+ylabel('Tiempo saturado [%]');
+legend('SAS/CAS', 'Hinf', 'Location', 'best');
+style_axes();
+export_png(fig, fullfile(cfg.figures_dir, 'comparacion_saturacion_final.png'));
+close(fig);
+end
+
+function plot_gamma_summary(cfg)
+current_file = fullfile(cfg.results_dir, 'taller1_results.mat');
+baseline_file = fullfile(cfg.results_dir, ...
+    'taller1_results_baseline_actual.mat');
+if ~isfile(current_file)
+    return;
+end
+
+current = load(current_file, 'hinf_data');
+labels = {'actual theta', 'actual phi'};
+values = [current.hinf_data.theta.gamma, current.hinf_data.phi.gamma];
+if isfile(baseline_file)
+    baseline = load(baseline_file, 'hinf_data');
+    labels = {'baseline theta', 'baseline phi', 'actual theta', ...
+        'actual phi'};
+    values = [baseline.hinf_data.theta.gamma, ...
+        baseline.hinf_data.phi.gamma, values];
+end
+
+fig = make_white_figure('Comparacion gamma Hinf');
+bar(categorical(labels), values);
+ylabel('gamma mixsyn');
+style_axes();
+export_png(fig, fullfile(cfg.figures_dir, 'comparacion_gamma_hinf.png'));
+close(fig);
+end
+
+function [labels, pid_theta, pid_phi, hinf_theta, hinf_phi] = ...
+    collect_rms(sim_results, selected)
+labels = selected;
+pid_theta = zeros(size(selected));
+pid_phi = zeros(size(selected));
+hinf_theta = zeros(size(selected));
+hinf_phi = zeros(size(selected));
+for k = 1:numel(selected)
+    idx_pid = find(strcmp({sim_results.pid.name}, selected{k}), 1);
+    idx_hinf = find(strcmp({sim_results.hinf.name}, selected{k}), 1);
+    pid_theta(k) = sim_results.pid(idx_pid).metrics.theta_rms_error_deg;
+    pid_phi(k) = sim_results.pid(idx_pid).metrics.phi_rms_error_deg;
+    hinf_theta(k) = sim_results.hinf(idx_hinf).metrics.theta_rms_error_deg;
+    hinf_phi(k) = sim_results.hinf(idx_hinf).metrics.phi_rms_error_deg;
+end
 end

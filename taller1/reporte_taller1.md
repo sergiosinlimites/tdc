@@ -1,609 +1,349 @@
-# Taller 1: Control robusto H_inf y analisis de desempeno en UAV
+# Taller 1: SAS/CAS PI+D y Hinf para UAV
 
 ## 1. Objetivo
 
-El objetivo del taller es disenar y comparar dos estrategias de control para un UAV linealizado:
+El taller compara dos controladores para el UAV linealizado:
 
-1. Control clasico tipo `PID`, organizado como `SAS/CAS`.
-2. Control robusto `H_inf` por sensibilidad mixta.
+1. SAS/CAS propio con arquitectura `PI + D`.
+2. Hinf por sensibilidad mixta, validado con las mismas simulaciones temporales.
 
-El desempeno se analiza en seguimiento de referencias tipo set-point para los angulos:
+El criterio final no es solo `gamma`: tambien se revisan seguimiento, saturacion, esfuerzo de control `KS`, ruido, perturbacion y comportamiento sobre `linmodel` acoplado.
 
-```math
-theta,\ phi \in [-40, 40]\ deg
-```
+## 2. Flujo reproducible
 
-Tambien se verifica rechazo a ruido de medicion, perturbaciones de entrada, esfuerzo de control y desempeno sobre la planta acoplada.
-
-## 2. Archivos implementados
-
-El taller quedo organizado con la misma metodologia modular del proyecto 1:
-
-```text
-taller1/
-|-- main_taller1.m
-|-- parametros_taller1.m
-|-- cargar_modelo_uav.m
-|-- seleccionar_canales_uav.m
-|-- analisis_planta_uav.m
-|-- diseno_pid_sas_cas.m
-|-- diseno_hinf_taller1.m
-|-- construir_planta_generalizada_hinf.m
-|-- analisis_sensibilidades.m
-|-- simulacion_taller1.m
-|-- crear_graficas_taller1.m
-|-- init_taller1_simulink.m
-|-- build_taller1_simulink.m
-|-- taller1_uav.slx
-|-- figures/
-|-- results/
-`-- reporte_taller1.md
-```
-
-El flujo principal es:
+Ejecutar desde MATLAB:
 
 ```matlab
+cd('/home/sergio/Escritorio/tdc/taller1')
 main_taller1
 ```
 
-El modelo Simulink se regenera con:
+El flujo:
 
-```matlab
-build_taller1_simulink
-```
+1. carga `modelo_lin.mat`;
+2. extrae canales `theta/elevator`, `q/elevator`, `phi/aileron`, `p/aileron`, `r/rudder`;
+3. disena SAS con root locus;
+4. disena CAS PI sobre la planta amortiguada;
+5. sintetiza Hinf con pesos redisenados;
+6. simula todos los escenarios en `linmodel`;
+7. exporta resultados y figuras.
 
-Para una explicacion conceptual mas pausada de incertidumbre multiplicativa, incertidumbre inversa, `S`, `T`, `KS`, pesos `W1`, `W2`, `W3` y la matriz de planta generalizada de las diapositivas, revisar:
-
-```text
-README.md
-```
-
-Documentos de apoyo adicionales:
+El baseline anterior se congelo en:
 
 ```text
-README_simulacion_taller1.md
-PLAN_PID_ROOT_LOCUS_SAS_CAS.md
-PLAN_REDUCCION_ORDEN_HINF.md
-NOTAS_SAS_CAS_DESARROLLO_PROFESOR.md
+results/taller1_results_baseline_actual.mat
+results/baseline_actual_resumen.md
 ```
 
-## 3. Planta UAV
+## 3. Planta y senales
 
-El archivo fuente del taller es:
+El archivo fuente es:
 
 ```text
 drive/TDC/02. TAREAS/T1/modelo_lin.mat
 ```
 
-Este archivo contiene:
+Contiene:
+
+| Modelo | Uso |
+|---|---|
+| `longmod` | diseno longitudinal `theta`, `q` |
+| `latmod` | diseno lateral `phi`, `p`, `r` |
+| `linmodel` | validacion acoplada final |
+
+Entradas principales:
 
 ```text
-linmodel : modelo completo acoplado
-latmod   : modelo lateral/direccional
-longmod  : modelo longitudinal
+elevator, aileron, rudder
 ```
 
-Datos confirmados:
-
-```text
-linmodel:
-  13 estados
-  8 entradas
-  14 salidas
-
-latmod:
-  entradas: aileron, rudder
-  salidas: beta, p, r, phi, psi
-
-longmod:
-  entradas: elevator, throttle
-  salidas: V, alpha, q, theta, h, ax, az
-```
-
-Para diseno se usan canales desacoplados:
-
-```matlab
-G_theta = longmod('theta','elevator');
-G_phi   = latmod('phi','aileron');
-```
-
-Para validacion temporal se usa:
-
-```matlab
-linmodel
-```
-
-Esto sigue el enunciado: disenar con modelos desacoplados y simular en el modelo acoplado.
-
-## 4. Especificaciones del taller
-
-Las especificaciones se codificaron en `parametros_taller1.m`:
-
-```matlab
-cfg.spec.ref_max_deg = 40;
-cfg.spec.control_limit_deg = 30;
-cfg.spec.bandwidth_hz = 8;
-cfg.spec.perturbation_hz = 6;
-cfg.spec.noise_power_long = 1e-4;
-cfg.spec.noise_power_lat = 1e-3;
-```
-
-En radianes:
-
-```math
-u_{max} = 30 deg = pi/6 rad
-```
-
-```math
-omega_b = 2 pi 8
-```
-
-```math
-omega_p = 2 pi 6
-```
-
-## 5. Teoria base de H_inf
-
-### 5.1 Norma H_inf
-
-Para un sistema estable `G(s)`, la norma H_inf se define como:
-
-```math
-||G||_\infty = sup_\omega \bar{\sigma}(G(j\omega))
-```
-
-Donde `sigma_bar` es el maximo valor singular. En sistemas SISO coincide con el pico de magnitud de Bode; en sistemas MIMO mide la maxima amplificacion posible para cualquier direccion de entrada.
-
-Por eso el taller pide usar:
-
-```matlab
-sigma(sys)
-```
-
-### 5.2 Sensibilidad
-
-Para una planta `G` y un controlador `K`:
-
-```math
-L = GK
-```
-
-La sensibilidad es:
-
-```math
-S = (I + GK)^{-1}
-```
-
-La sensibilidad complementaria es:
-
-```math
-T = GK(I + GK)^{-1}
-```
-
-Y se cumple:
-
-```math
-S + T = I
-```
-
-Interpretacion:
-
-- `S` pequeno a baja frecuencia: buen seguimiento y rechazo de perturbaciones lentas.
-- `T` pequeno a alta frecuencia: menor amplificacion de ruido de medicion.
-- `K*S` pequeno: menor esfuerzo de control y mejor margen ante incertidumbre aditiva.
-
-El compromiso central es que `S` y `T` no pueden ser pequenos en todas las frecuencias al mismo tiempo.
-
-### 5.3 Sensibilidad mixta
-
-El diseno H_inf usado en el taller busca minimizar:
-
-```math
-||
-[ W_1 S
-  W_2 K S
-  W_3 T ]
-||_\infty
-= gamma
-```
-
-Donde:
-
-- `W1` penaliza error de seguimiento.
-- `W2` penaliza accion de control.
-- `W3` penaliza sensibilidad complementaria y ruido.
-
-La idea ideal seria lograr:
-
-```math
-gamma < 1
-```
-
-En esta primera sintesis reproducible se obtuvo `gamma > 1`, lo que significa que los pesos son factibles para diseno estable, pero todavia no cumplen estrictamente todas las cotas impuestas. Aun asi, el controlador es estable y sirve para la comparacion pedida por el taller. Los pesos quedan parametrizados para iteracion posterior.
-
-## 6. Planta generalizada
-
-La planta aumentada se construye conceptualmente como:
-
-```math
-P = augw(G, W_1, W_2, W_3)
-```
-
-Y el controlador se sintetiza con:
-
-```matlab
-[K, CL, gamma] = mixsyn(G, W1, W2, W3);
-```
-
-El archivo:
-
-```text
-construir_planta_generalizada_hinf.m
-```
-
-deja explicita la llamada equivalente:
-
-```matlab
-P = augw(G, W1, W2, W3);
-```
-
-## 7. Pesos H_inf usados
-
-Los pesos se definen en `diseno_hinf_taller1.m` a partir de parametros:
-
-```matlab
-W1 = makeweight(5, wb, 0.05);
-W2 = 0.15;
-W3 = makeweight(0.02, wp, 5);
-```
-
-Interpretacion:
-
-- `W1`: exige que `S` sea pequeno a baja frecuencia.
-- `W2`: limita el tamano de `K*S`.
-- `W3`: exige que `T` caiga en alta frecuencia.
-
-Se probaron valores de `W2 = 0.08`, `0.15` y `0.30`. El valor `0.15` se dejo como compromiso inicial:
-
-- `0.08` hacia el controlador mas agresivo y aumenta `K*S`.
-- `0.30` reduce control, pero produjo un pico grande en `S/T` para `theta`.
-- `0.15` mantiene estabilidad y reduce parcialmente el esfuerzo sin degradar tanto la sensibilidad.
-
-## 8. Control clasico PID/SAS-CAS
-
-El controlador clasico se implementa en:
-
-```text
-diseno_pid_sas_cas.m
-```
-
-La arquitectura usada es:
-
-```text
-CAS:
-  PI sobre theta_ref - theta
-  PI sobre phi_ref - phi
-
-SAS:
-  accion derivativa filtrada asociada a q y p
-  yaw damper sobre r
-```
-
-Control longitudinal:
-
-```math
-u_e = K_{p,theta} e_theta + K_{i,theta} int e_theta dt - K_{d,theta} q
-```
-
-Control lateral:
-
-```math
-u_a = K_{p,phi} e_phi + K_{i,phi} int e_phi dt - K_{d,phi} p
-```
-
-Yaw damper:
-
-```math
-K_{YD}(s) = 0.065 s/(s + 2)
-```
-
-Ganancias base:
-
-```matlab
-kp_theta = -0.84;
-ki_theta = -0.23;
-kd_theta = -0.08;
-
-kp_phi = -0.52;
-ki_phi = -0.20;
-kd_phi = -0.07;
-```
-
-Estas ganancias no fueron inventadas ni salen de la sintesis H_inf. Vienen del controlador baseline del paquete UAV_SIM_AEM:
-
-```text
-drive/TDC/04. Otros Recursos/UAV_SIM_AEM/Simulation_Lin/Controllers/baseline_gains.m
-```
-
-La correspondencia usada es:
-
-| En `baseline_gains.m` | En este taller | Valor |
-|---|---:|---:|
-| `kp_PT` | `kp_theta` | `-0.84` |
-| `ki_PT` | `ki_theta` | `-0.23` |
-| `kp_PD` | `kd_theta` | `-0.08` |
-| `kp_RT` | `kp_phi` | `-0.52` |
-| `ki_RT` | `ki_phi` | `-0.20` |
-| `kp_RD` | `kd_phi` | `-0.07` |
-
-En el archivo original, `PT` significa `Pitch Tracker`, `PD` significa `Pitch Damper`, `RT` significa `Roll Tracker` y `RD` significa `Roll Damper`. Por eso aqui se interpretan como CAS de angulo mas SAS de velocidad angular.
-
-## 9. Resultados frecuenciales
-
-La corrida final imprimio:
-
-```text
-Hinf theta gamma: 1.6202 | orden K: 7
-Hinf phi gamma:   1.5743 | orden K: 6
-```
-
-Normas aproximadas:
-
-```text
-theta PID : ||S||=1.136 ||T||=1.000 ||KS||=3.507
-theta Hinf: ||S||=1.141 ||T||=0.762 ||KS||=10.527
-
-phi PID   : ||S||=1.117 ||T||=1.056 ||KS||=2.853
-phi Hinf  : ||S||=1.137 ||T||=0.685 ||KS||=10.257
-```
-
-Lectura:
-
-- El controlador H_inf reduce `T` frente al PID en ambos ejes, lo cual es bueno para ruido de medicion.
-- El controlador H_inf actual tiene mayor `K*S`, por lo que pide mas accion de control.
-- El PID base resulta menos agresivo y en la simulacion temporal conserva errores RMS menores para los casos probados.
-- Esta comparacion muestra el compromiso real del diseno: no basta sintetizar H_inf; hay que iterar pesos para balancear seguimiento, ruido y control.
-
-Figuras generadas:
-
-```text
-figures/planta_sigma.png
-figures/sensibilidades_theta.png
-figures/sensibilidades_phi.png
-figures/comparacion_sensibilidades.png
-```
-
-## 10. Simulacion final acoplada
-
-La simulacion temporal se implementa en:
-
-```text
-simulacion_taller1.m
-```
-
-Incluye:
-
-- planta acoplada `linmodel`;
-- saturacion `+-30 deg`;
-- ruido de medicion;
-- perturbacion sinusoidal de entrada hasta `6 Hz`;
-- comparacion PID vs H_inf;
-- referencias de `theta` y `phi`;
-- casos grandes de `40 deg`.
-
-Casos ejecutados:
-
-```text
-theta_10
-theta_minus_10
-phi_10
-phi_minus_10
-theta_phi_10
-theta_40
-phi_40
-noise_disturbance
-```
-
-Resumen final:
-
-```text
-pid  theta_10           RMS theta=  1.425 deg RMS phi=  0.238 deg sat=  0.0%
-pid  theta_minus_10     RMS theta=  1.425 deg RMS phi=  0.238 deg sat=  0.0%
-pid  phi_10             RMS theta=  0.043 deg RMS phi=  1.346 deg sat=  0.0%
-pid  phi_minus_10       RMS theta=  0.043 deg RMS phi=  1.346 deg sat=  0.0%
-pid  theta_phi_10       RMS theta=  1.427 deg RMS phi=  1.435 deg sat=  0.0%
-pid  theta_40           RMS theta=  5.698 deg RMS phi=  0.952 deg sat=  0.1%
-pid  phi_40             RMS theta=  0.172 deg RMS phi=  5.383 deg sat=  0.0%
-pid  noise_disturbance  RMS theta=  1.418 deg RMS phi=  1.461 deg sat=  0.0%
-
-hinf theta_10           RMS theta=  3.381 deg RMS phi=  3.158 deg sat=  0.2%
-hinf theta_minus_10     RMS theta=  3.381 deg RMS phi=  3.158 deg sat=  0.2%
-hinf phi_10             RMS theta=  0.054 deg RMS phi=  4.724 deg sat=  0.1%
-hinf phi_minus_10       RMS theta=  0.054 deg RMS phi=  4.724 deg sat=  0.1%
-hinf theta_phi_10       RMS theta=  3.355 deg RMS phi=  3.140 deg sat=  0.2%
-hinf theta_40           RMS theta= 14.279 deg RMS phi= 12.287 deg sat=  0.5%
-hinf phi_40             RMS theta=  0.146 deg RMS phi= 25.261 deg sat=  0.3%
-hinf noise_disturbance  RMS theta=  3.354 deg RMS phi=  4.190 deg sat=  6.0%
-```
-
-Figuras temporales:
-
-```text
-figures/sim_theta_10.png
-figures/sim_phi_10.png
-figures/sim_theta_phi_10.png
-figures/sim_theta_40.png
-figures/sim_phi_40.png
-figures/sim_noise_disturbance.png
-```
-
-## 11. Modelo Simulink
-
-El modelo:
-
-```text
-taller1_uav.slx
-```
-
-se genera automaticamente con:
-
-```matlab
-build_taller1_simulink
-```
-
-Incluye:
-
-- planta lineal acoplada;
-- selector `PID/H_inf` mediante `control_mode`;
-- referencias `theta_ref` y `phi_ref`;
-- ruido de medicion en `theta` y `phi`;
-- perturbaciones sinusoidales de entrada en `elevator`, `aileron` y `rudder`;
-- saturacion de actuadores;
-- logging a `simout_y` y `simout_u`.
-
-Para evitar un lazo algebraico artificial, el bloque de planta en Simulink expone solo:
+Salidas principales:
 
 ```text
 theta, phi, p, q, r
 ```
 
-con matriz `D_sim = 0`, ya que esas son las mediciones usadas por el controlador.
+## 4. Arquitectura SAS/CAS implementada
 
-Validacion realizada:
+Pitch:
 
 ```matlab
-run('init_taller1_simulink.m')
-in = Simulink.SimulationInput('taller1_uav');
-in = in.setModelParameter('StopTime','3');
-out = sim(in);
-disp(out.who)
+e_theta = theta_ref - theta_meas;
+q_cmd   = Kp_theta*e_theta + Ki_theta*xi_theta;
+u_e_raw = q_cmd - D_q*q_meas;
+u_e     = sat(u_e_raw);
 ```
 
-Salida confirmada:
+Roll:
+
+```matlab
+e_phi   = phi_ref - phi_meas;
+p_cmd   = Kp_phi*e_phi + Ki_phi*xi_phi;
+u_a_raw = p_cmd - D_p*p_meas;
+u_a     = sat(u_a_raw);
+```
+
+Anti-windup:
+
+```matlab
+xi_dot = error + Kaw*(u_sat - u_raw)
+```
+
+El yaw se mantiene como damper con washout:
+
+```matlab
+K_yaw(s) = 0.065*s/(s + 2)
+```
+
+## 5. Diseno SAS con root locus
+
+Archivo:
 
 ```text
+diseno_sas_root_locus.m
+```
+
+Ganancias elegidas:
+
+| Lazo SAS | Ganancia |
+|---|---:|
+| `D_q` | -0.20 |
+| `D_p` | 0.05 |
+| `D_r` | -0.065 equivalente en la lectura root-locus |
+
+Figuras:
+
+```text
+figures/root_locus_sas_q.png
+figures/root_locus_sas_p.png
+figures/root_locus_sas_r.png
+```
+
+La decision clave es el signo: `D_q` negativo amortigua el canal `q/elevator`, mientras que en roll el lazo interno estable y util aparece con `D_p` positivo.
+
+## 6. Diseno CAS PI
+
+Archivo:
+
+```text
+diseno_cas_pi_root_locus.m
+```
+
+Plantas externas:
+
+```matlab
+G_theta_sas = minreal(G_theta/(1 + D_q*G_q));
+G_phi_sas   = minreal(G_phi/(1 + D_p*G_p));
+```
+
+Ganancias finales:
+
+| CAS | `Kp` | `Ki` |
+|---|---:|---:|
+| theta | -1.00 | -0.30 |
+| phi | -0.35 | -0.18 |
+
+Figuras:
+
+```text
+figures/root_locus_cas_theta.png
+figures/root_locus_cas_phi.png
+```
+
+## 7. Redisenio Hinf
+
+Archivo:
+
+```text
+diseno_hinf_taller1.m
+optimizar_pesos_hinf.m
+```
+
+Pesos finales:
+
+```matlab
+W1 = makeweight(80, wb, 0.05);
+W2 = 1.0;
+W3 = makeweight(0.005, wp, 15);
+```
+
+El barrido quedo documentado en:
+
+```text
+results/hinf_weight_sweep.mat
+results/hinf_weight_sweep_resumen.md
+```
+
+Mejor candidato del barrido:
+
+| W1 low | W2 | W3 low | W3 high | gamma theta | gamma phi |
+|---:|---:|---:|---:|---:|---:|
+| 80 | 1.0 | 0.005 | 15 | 3.660 | 3.502 |
+
+El `gamma` sube frente al baseline porque los pesos ahora son mas exigentes. La mejora se defiende por las simulaciones y por `KS`, no por presentar un `gamma` aislado.
+
+## 8. Sensibilidades finales
+
+| Lazo | `||S||` | `||T||` | `||KS||` |
+|---|---:|---:|---:|
+| theta SAS/CAS | 1.234 | 1.000 | 8.138 |
+| theta Hinf | 1.222 | 0.954 | 4.303 |
+| phi SAS/CAS | 2.050 | 1.225 | 1.317 |
+| phi Hinf | 1.202 | 0.956 | 3.471 |
+
+Lectura:
+
+- Hinf redisenado baja fuertemente `KS` en theta frente al Hinf baseline.
+- En phi, SAS/CAS conserva menor esfuerzo, pero Hinf mejora tracking y sensibilidad frente al Hinf anterior.
+- El Hinf nuevo transmite mejor la referencia que el Hinf baseline; por eso las figuras temporales ya no contradicen la conclusion.
+
+## 9. Simulacion acoplada final
+
+Escenarios ejecutados:
+
+```text
+theta_10, theta_minus_10, phi_10, phi_minus_10,
+theta_phi_10, theta_30, phi_30, theta_phi_30,
+theta_40, phi_40, noise_disturbance
+```
+
+Resumen principal:
+
+| Control | Escenario | RMS theta [deg] | RMS phi [deg] | Sat [%] |
+|---|---|---:|---:|---:|
+| SAS/CAS | theta_10 | 1.423 | 0.294 | 0.0 |
+| SAS/CAS | phi_10 | 0.039 | 1.135 | 0.0 |
+| SAS/CAS | theta_phi_10 | 1.433 | 1.218 | 0.0 |
+| SAS/CAS | theta_30 | 4.268 | 0.882 | 0.0 |
+| SAS/CAS | phi_30 | 0.116 | 3.404 | 0.0 |
+| SAS/CAS | theta_phi_30 | 4.298 | 3.653 | 0.0 |
+| SAS/CAS | theta_40 | 5.686 | 1.179 | 0.1 |
+| SAS/CAS | phi_40 | 0.154 | 4.539 | 0.0 |
+| SAS/CAS | noise_disturbance | 1.427 | 1.261 | 0.0 |
+| Hinf | theta_10 | 0.844 | 0.824 | 0.1 |
+| Hinf | phi_10 | 0.027 | 0.859 | 0.0 |
+| Hinf | theta_phi_10 | 0.842 | 0.865 | 0.1 |
+| Hinf | theta_30 | 3.032 | 2.467 | 1.0 |
+| Hinf | phi_30 | 0.075 | 3.338 | 0.5 |
+| Hinf | theta_phi_30 | 3.038 | 2.993 | 1.0 |
+| Hinf | theta_40 | 4.396 | 3.284 | 1.7 |
+| Hinf | phi_40 | 0.098 | 4.871 | 0.7 |
+| Hinf | noise_disturbance | 0.837 | 0.957 | 0.1 |
+
+Comparado con el Hinf baseline:
+
+- `theta_10`: RMS theta baja de 3.381 a 0.844 deg.
+- `phi_10`: RMS phi baja de 4.724 a 0.859 deg.
+- `theta_phi_10`: ambos ejes bajan a menos de 0.9 deg RMS.
+- `noise_disturbance`: RMS theta baja de 3.354 a 0.837 deg y RMS phi baja de 4.190 a 0.957 deg.
+- `KS theta` baja de 10.527 a 4.303.
+
+El caso de 40 deg queda como prueba de estres: Hinf mejora el error, pero acepta saturacion breve; SAS/CAS satura menos y es mas conservador.
+
+## 10. Figuras finales
+
+Figuras de diseno:
+
+```text
+figures/root_locus_sas_q.png
+figures/root_locus_sas_p.png
+figures/root_locus_sas_r.png
+figures/root_locus_cas_theta.png
+figures/root_locus_cas_phi.png
+```
+
+Figuras de validacion:
+
+```text
+figures/sim_theta_10.png
+figures/sim_phi_10.png
+figures/sim_theta_phi_10.png
+figures/sim_theta_30.png
+figures/sim_phi_30.png
+figures/sim_theta_phi_30.png
+figures/sim_theta_40.png
+figures/sim_phi_40.png
+figures/sim_noise_disturbance.png
+figures/comparacion_temporal_final.png
+figures/comparacion_saturacion_final.png
+figures/comparacion_gamma_hinf.png
+```
+
+## 11. Revision critica de Hinf
+
+Despues de revisar nuevamente las figuras, el Hinf final no debe presentarse como un controlador que cumple todos los requisitos de seguimiento. La figura mas clara es `sim_phi_40.png`: Hinf queda por debajo de la referencia de `phi`, aunque la saturacion sea breve. En `sim_phi_30.png` se ve el mismo patron con menor magnitud.
+
+La figura `sensibilidades_phi.png` tambien anticipa el problema:
+
+```text
+||KS|| phi SAS/CAS = 1.317
+||KS|| phi Hinf    = 3.471
+KS_Hinf/KS_SAS     = 2.64
+```
+
+Hinf mejora `S` de baja frecuencia frente a SAS/CAS, pero mantiene mayor esfuerzo `KS` en `phi`. Eso significa que se acerca mejor a la referencia nominal, pero con aileron mas agresivo y mayor sensibilidad a ruido, cambios rapidos y saturacion.
+
+Se agrego una validacion adicional:
+
+```text
+validacion_extrema_taller1.m
+results/revision_figuras_hinf_y_validacion_extrema.md
+results/validacion_extrema_taller1.mat
+figures/validacion_saturacion_phi_hinf.png
+figures/validacion_extrema_hinf.png
+```
+
+Barrido de limite de actuador para `phi_40` con Hinf:
+
+| Limite actuador | Error final phi [deg] | RMS phi [deg] | Saturacion [%] |
+|---:|---:|---:|---:|
+| 30 deg | 3.041 | 4.907 | 0.75 |
+| 45 deg | 2.616 | 4.339 | 0.42 |
+| 60 deg | 2.373 | 4.009 | 0.25 |
+
+Subir la saturacion ayuda al transitorio, pero Hinf sigue sin llegar exactamente a `phi`. Eso apunta a una limitacion del diseno SISO/pesos, no solo al limite de actuador.
+
+Pruebas mas fuertes con limite de 60 deg, perturbacion de 3 deg y ruido tres veces mayor en desviacion estandar:
+
+| Escenario | RMS theta Hinf [deg] | RMS phi Hinf [deg] | Error final phi [deg] | Flags |
+|---|---:|---:|---:|---|
+| `phi_60_hard` | 0.150 | 6.735 | 4.092 | `phi_no_llega` |
+| `theta_phi_45_hard` | 4.311 | 4.308 | 3.336 | `phi_no_llega` |
+| `noise_dist_x3_hard` | 1.794 | 2.288 | 1.632 | `phi_no_llega`, `phi_sobrepasa` |
+
+Conclusion de esta revision: Hinf no queda aprobado como solucion final robusta para `phi`; queda como iteracion mejor que el Hinf baseline, pero todavia requiere redisenio. La ruta tecnica mas razonable es pasar a sintesis MIMO o imponer integracion/seguimiento exacto en la planta generalizada, y luego repetir esta validacion extrema.
+
+## 12. Modelo Simulink
+
+Se regenera con:
+
+```matlab
+build_taller1_simulink
+```
+
+El modelo ahora contiene bloques explicitos:
+
+```text
+CAS_PI_theta, SAS_D_q, elevator_raw_sum, sat_elevator
+CAS_PI_phi,   SAS_D_p, aileron_raw_sum,  sat_aileron
+yaw_damper, sat_rudder
+```
+
+Tambien registra:
+
+```text
+simout_sas_cas
 simout_u
 simout_y
 tout
 ```
 
-## 12. Como reproducir todo
+`simout_sas_cas` incluye referencias, angulos, velocidades, comandos PI, aportes SAS, senales raw y senales saturadas.
 
-Desde MATLAB:
+## 13. Conclusiones
 
-```matlab
-cd('/home/sergio/Escritorio/tdc/taller1')
-main_taller1
-```
-
-Esto debe:
-
-1. cargar `modelo_lin.mat`;
-2. analizar planta y canales;
-3. disenar PID/SAS-CAS;
-4. sintetizar H_inf;
-5. calcular `S`, `T`, `K*S`;
-6. simular casos finales;
-7. exportar figuras;
-8. guardar `results/taller1_results.mat`.
-
-Para regenerar Simulink:
-
-```matlab
-cd('/home/sergio/Escritorio/tdc/taller1')
-build_taller1_simulink
-```
-
-Para simular el modelo:
-
-```matlab
-run('init_taller1_simulink.m')
-in = Simulink.SimulationInput('taller1_uav');
-in = in.setModelParameter('StopTime','12');
-out = sim(in);
-```
-
-## 13. Como verificar
-
-### 13.1 Toolboxes
-
-```matlab
-which hinfsyn
-which mixsyn
-which augw
-which makeweight
-```
-
-Todas deben apuntar a Robust Control Toolbox.
-
-### 13.2 Estabilidad
-
-Despues de `main_taller1`:
-
-```matlab
-isstable(pid_data.theta_loop)
-isstable(pid_data.phi_loop)
-isstable(hinf_data.theta.CL)
-isstable(hinf_data.phi.CL)
-```
-
-### 13.3 Sensibilidades
-
-```matlab
-sens.theta.pid.norm_S
-sens.theta.pid.norm_T
-sens.theta.pid.norm_KS
-
-sens.theta.hinf.norm_S
-sens.theta.hinf.norm_T
-sens.theta.hinf.norm_KS
-```
-
-Repetir para `phi`.
-
-### 13.4 Figuras
-
-Revisar:
-
-```text
-taller1/figures/
-```
-
-Debe contener las figuras de planta, sensibilidades y simulaciones.
-
-### 13.5 Simulink
-
-```matlab
-build_taller1_simulink
-run('init_taller1_simulink.m')
-in = Simulink.SimulationInput('taller1_uav');
-in = in.setModelParameter('StopTime','3');
-out = sim(in);
-disp(out.who)
-```
-
-Debe mostrar `simout_u`, `simout_y` y `tout`.
-
-## 14. Conclusiones tecnicas
-
-1. El PID/SAS-CAS base es estable, simple y tiene buen desempeno temporal para las referencias probadas.
-2. El H_inf sintetizado es estable y reduce la sensibilidad complementaria `T`, lo cual va en la direccion correcta para ruido de medicion.
-3. El H_inf actual aumenta `K*S`, por lo que amplifica mas la accion de control que el PID.
-4. En simulacion acoplada, el PID tiene menor error RMS que el H_inf con los pesos actuales.
-5. El resultado no invalida H_inf: muestra que el exito del metodo depende fuertemente de la seleccion de pesos y de la compatibilidad entre el modelo usado para diseno y la planta acoplada usada para simulacion.
-6. Para una segunda iteracion, conviene probar pesos MIMO o una planta generalizada que incluya explicitamente los canales `theta`, `phi`, `q`, `p`, `r` y la penalizacion de actuadores de forma conjunta.
-
-## 15. Siguiente iteracion recomendada
-
-Si se quiere mejorar el controlador H_inf, el siguiente paso tecnico no es cambiar de lenguaje, sino ajustar el planteamiento en MATLAB:
-
-1. Probar un diseno MIMO para:
-
-   ```matlab
-   G_mimo = linmodel({'theta','phi'}, {'elevator','aileron'});
-   ```
-
-2. Incluir penalizacion separada para `elevator` y `aileron`.
-3. Agregar un peso de ruido mas fuerte en `W3`.
-4. Comparar `gamma`, `S`, `T`, `K*S` y simulacion acoplada.
-5. Solo despues de aprobar esta version, portar el flujo a Python.
+1. El SAS/CAS final ya no depende de ganancias prestadas: `D_q`, `D_p` y los PI externos estan separados y justificados.
+2. El diagrama Simulink coincide con la arquitectura `PI + D` pedida por el profesor.
+3. Hinf baseline no era defendible solo por `gamma`; las figuras mostraban mal seguimiento y mucho `KS`.
+4. Hinf redisenado mejora claramente frente al Hinf baseline, pero no cumple tracking estricto de `phi` en referencias medianas/grandes.
+5. La comparacion final debe presentarse como compromiso: SAS/CAS es simple, llega mejor a `phi` y satura poco; Hinf nuevo reduce errores RMS en varios casos, pero todavia queda condicionado por error final en `phi`, mayor `KS` lateral y sensibilidad a pruebas fuertes.

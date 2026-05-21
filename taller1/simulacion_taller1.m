@@ -313,20 +313,7 @@ end
 
 function metrics = metrics_for_case(sim, cfg)
 %METRICS_FOR_CASE Calcula errores RMS, maximos y fraccion de saturacion.
-limit = cfg.spec.control_limit_deg;
-post = sim.t >= cfg.sim.t_step;
-tail = sim.t >= max(cfg.sim.t_final - 2, cfg.sim.t_step);
-
-metrics.max_abs_theta_deg = max(abs(sim.theta_deg));
-metrics.max_abs_phi_deg = max(abs(sim.phi_deg));
-metrics.max_abs_elevator_deg = max(abs(sim.elevator_deg));
-metrics.max_abs_aileron_deg = max(abs(sim.aileron_deg));
-metrics.max_abs_rudder_deg = max(abs(sim.rudder_deg));
-metrics.theta_final_error_deg = mean(sim.theta_ref_deg(tail) - sim.theta_deg(tail));
-metrics.phi_final_error_deg = mean(sim.phi_ref_deg(tail) - sim.phi_deg(tail));
-metrics.theta_rms_error_deg = rms(sim.theta_ref_deg(post) - sim.theta_deg(post));
-metrics.phi_rms_error_deg = rms(sim.phi_ref_deg(post) - sim.phi_deg(post));
-metrics.sat_fraction = mean(any(abs(sim.u_sat) >= deg2rad(limit)*0.999, 2));
+metrics = evaluar_saturacion_controlador(sim, cfg);
 end
 
 function summary = summarize_results(sim_results, cfg)
@@ -343,7 +330,11 @@ for c = 1:numel(controllers)
         summary(row).phi_rms_error_deg = family(k).metrics.phi_rms_error_deg; %#ok<AGROW>
         summary(row).max_abs_elevator_deg = family(k).metrics.max_abs_elevator_deg; %#ok<AGROW>
         summary(row).max_abs_aileron_deg = family(k).metrics.max_abs_aileron_deg; %#ok<AGROW>
+        summary(row).max_abs_rudder_deg = family(k).metrics.max_abs_rudder_deg; %#ok<AGROW>
+        summary(row).theta_final_error_deg = family(k).metrics.theta_final_error_deg; %#ok<AGROW>
+        summary(row).phi_final_error_deg = family(k).metrics.phi_final_error_deg; %#ok<AGROW>
         summary(row).sat_fraction = family(k).metrics.sat_fraction; %#ok<AGROW>
+        summary(row).sat_time_s = family(k).metrics.sat_time_s; %#ok<AGROW>
     end
 end
 

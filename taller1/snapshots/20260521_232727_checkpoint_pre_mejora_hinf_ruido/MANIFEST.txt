@@ -1,0 +1,23 @@
+Checkpoint antes de mejorar rechazo de ruido/perturbacion lateral Hinf.
+
+Fecha local: 2026-05-21 23:27:27 America/Bogota.
+
+Motivo:
+- Congelar la version actual que ya corrigio el error nominal de phi.
+- Permitir volver atras si el nuevo ajuste de W3_phi/W2_phi empeora tracking,
+  saturacion o validacion extrema.
+
+Contenido:
+- Scripts MATLAB principales del taller (*.m).
+- BITACORA_VALIDACION_HINF_SAS_CAS.md.
+- README.md y README_simulacion_taller1.md.
+- Carpeta results con .mat, .md y .txt disponibles al momento del checkpoint.
+- Carpeta figures con .png disponibles al momento del checkpoint.
+
+Estado congelado mas importante:
+- Hinf theta: gamma = 3.6603.
+- Hinf phi: gamma = 3.7778.
+- Hinf phi_30: error final phi = 1.284 deg.
+- Hinf phi_40: error final phi = 1.943 deg.
+- Validacion extrema: ya no aparece phi_no_llega, pero queda phi_sobrepasa en
+  noise_dist_x3_hard.

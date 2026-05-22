@@ -403,7 +403,65 @@ Notas:
 - No se paso todavia a Hinf MIMO porque la falla principal de seguimiento (`phi_no_llega`) ya no aparece.
 - Si el criterio hard exige eliminar tambien `phi_sobrepasa`, la siguiente iteracion debe atacar rechazo de ruido/perturbacion lateral; MIMO o integracion explicita quedan como extensiones, pero el precompensador de referencia ya no parece la primera necesidad.
 
-## 10. Plantilla para nuevas entradas
+## 10. Iteracion 2 - 2026-05-21 - rechazo de ruido lateral SISO
+
+Objetivo:
+
+- Mantener la version estable de la iteracion 1 como checkpoint.
+- Probar mejoras SISO para reducir `phi_sobrepasa` en `noise_dist_x3_hard`.
+- No tocar saturacion.
+
+Checkpoint:
+
+```text
+taller1/snapshots/20260521_232727_checkpoint_pre_mejora_hinf_ruido/
+```
+
+Intentos:
+
+- Aumentar `W3_phi` en alta frecuencia.
+- Bajar el cruce de `W2_phi`.
+- Subir `W2_phi_high_gain`.
+- Subir `W1_phi` para recuperar tracking al endurecer `W2_phi/W3_phi`.
+
+Mejor candidato explorado:
+
+| W1 phi | W2 low | W2 high | W2 cross | W3 high | W3 cross | gamma phi | KS phi | err phi40 | err combo hard | over noise hard |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 320 | 1.00 | 5.50 | 18.0 | 45 | 22.0 | 4.561 | 2.191 | 0.946 | 2.393 | 4.026 |
+
+Lectura:
+
+- El candidato redujo `KS_phi` de `3.080` a `2.191`.
+- Tambien bajo `phi_sobrepasa` en `noise_dist_x3_hard` de `4.511 deg` a `4.026 deg`.
+- Pero reabrio `phi_no_llega` en `theta_phi_45_hard`, porque el error final de `phi` subio a `2.393 deg`.
+
+Decision:
+
+- [x] rechazar los cambios SISO de ruido como version entregable
+- [x] restaurar parametros de la iteracion 1
+- [x] conservar reporte de intentos en:
+
+```text
+results/hinf_ruido_siso_intentos_20260521.md
+```
+
+Version activa despues del rechazo:
+
+| Escenario Hinf hard | RMS phi [deg] | Error final phi [deg] | Sobrepaso phi [deg] | Flags |
+|---|---:|---:|---:|---|
+| `phi_60_hard` | 5.708 | 2.569 | 0.000 | `ok` |
+| `theta_phi_45_hard` | 3.877 | 2.152 | 2.515 | `ok` |
+| `noise_dist_x3_hard` | 2.211 | 0.972 | 4.511 | `phi_sobrepasa` |
+
+Conclusion:
+
+Los pesos SISO ya estan cerca de su limite util. Reducir mas `KS_phi` con
+`W2_phi/W3_phi` mejora algo el ruido, pero deteriora el tracking combinado
+fuerte. La siguiente mejora real debe pasar a Hinf MIMO `theta-phi` o a una
+estructura adicional de rechazo lateral, no a seguir apretando solo pesos SISO.
+
+## 11. Plantilla para nuevas entradas
 
 Copiar esta plantilla por cada intento nuevo:
 
@@ -442,22 +500,21 @@ Notas:
 - 
 ```
 
-## 11. Proxima accion propuesta
+## 12. Proxima accion propuesta
 
-La siguiente accion ya no debe empezar por saturacion ni por precompensador de tracking. Despues de esta iteracion, el orden recomendado es:
+La siguiente accion ya no debe empezar por saturacion, precompensador de tracking
+ni por seguir apretando solo `W2_phi/W3_phi` en SISO. Despues de esta iteracion,
+el orden recomendado es:
 
 1. Mantener esta version SISO por eje como baseline mejorado.
-2. Si se exige eliminar `phi_sobrepasa` en `noise_dist_x3_hard`, probar rechazo lateral de ruido/perturbacion:
-   - aumentar `W3_phi` en alta frecuencia;
-   - probar un peso de control lateral con cruce mas bajo;
-   - comparar contra no empeorar `phi_30` y `phi_40`.
-3. Si el acoplamiento sigue limitando el resultado, crear un diseno Hinf MIMO sin borrar el Hinf SISO actual:
+2. Si se exige eliminar `phi_sobrepasa` en `noise_dist_x3_hard`, crear un
+   diseno Hinf MIMO sin borrar el Hinf SISO actual:
 
 ```text
 diseno_hinf_mimo_taller1.m
 ```
 
-4. Agregar comparacion en simulacion:
+3. Agregar comparacion en simulacion:
 
 ```text
 SAS/CAS
@@ -465,6 +522,57 @@ Hinf SISO
 Hinf MIMO
 ```
 
-5. Repetir `validacion_extrema_taller1`.
+4. Repetir `validacion_extrema_taller1`.
 
 La meta no es bajar `gamma` a toda costa. La meta es que las figuras temporales y la tabla de validacion extrema dejen de contradecir la conclusion.
+
+## 13. Iteracion 3 - 2026-05-22 - mini-ronda suave SISO
+
+Objetivo:
+
+- Ejecutar una ronda corta con numeros menos agresivos antes de pasar a MIMO.
+- Mantener el Hinf SISO actual como baseline y validar si algun ajuste suave
+  reduce `phi_sobrepasa` sin reabrir fallas de tracking.
+
+Comando ejecutado:
+
+```matlab
+barrido_suave_hinf_siso_phi()
+```
+
+Archivo generado:
+
+```text
+results/hinf_siso_suave_phi_sweep.md
+results/hinf_siso_suave_phi_sweep.mat
+```
+
+Baseline evaluado:
+
+| Caso | W1 phi | W2 low | W2 high | W2 cross | W3 high | gamma phi | KS phi | err phi30 | err phi40 | err combo hard | over noise hard | Flags noise |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| baseline | 220 | 0.80 | 3.20 | 37.7 | 15 | 3.778 | 3.080 | 1.284 | 1.943 | 2.152 | 4.511 | `phi_sobrepasa` |
+
+Mejor candidato formal:
+
+| Caso | W1 phi | W2 low | W2 high | W2 cross | W3 high | gamma phi | KS phi | err phi30 | err phi40 | err combo hard | over noise hard | Flags noise |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `soft_015` | 220 | 0.90 | 3.20 | 45 | 20 | 3.825 | 3.003 | 1.314 | 1.985 | 2.181 | 4.484 | `phi_sobrepasa` |
+
+Lectura:
+
+- La mini-ronda encontro 1 candidato que pasa los filtros formales.
+- La mejora en ruido es muy pequena: `4.511 -> 4.484 deg`.
+- `phi_sobrepasa` no desaparece.
+- Los candidatos que bajaron mas `KS_phi` o `over noise` reabrieron
+  `phi_no_llega` o rompieron `phi_40`.
+
+Decision:
+
+- [x] registrar `soft_015` como alternativa SISO opcional.
+- [x] no reemplazar automaticamente el baseline activo, porque la mejora es
+  marginal y no elimina el flag.
+- [x] cerrar la busqueda SISO si el requisito real es quitar
+  `phi_sobrepasa`.
+- [x] pasar a Hinf MIMO `theta-phi` o a rechazo lateral adicional como
+  siguiente paso tecnico.

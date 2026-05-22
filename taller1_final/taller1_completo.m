@@ -19,7 +19,9 @@ clear; clc; close all;
 project_dir = fileparts(mfilename('fullpath'));
 repo_dir    = fileparts(project_dir);
 figures_dir = fullfile(project_dir, 'figures');
+results_dir = fullfile(project_dir, 'results');
 if ~exist(figures_dir, 'dir'), mkdir(figures_dir); end
+if ~exist(results_dir, 'dir'), mkdir(results_dir); end
 
 model_path = fullfile(repo_dir, 'drive', 'TDC', '02. TAREAS', ...
     'T1', 'modelo_lin.mat');
@@ -195,11 +197,18 @@ W1_theta = makeweight(80, wb, 0.05);
 W2_theta = 1.0;
 W3_theta = makeweight(0.005, wp, 15);
 
-% 7.2 Pesos para phi (iteracion aceptada del barrido)
+% 7.2 Pesos para phi (iteracion aceptada del barrido).
+% wp = 2*pi*6 viene de la perturbacion de 6 Hz del enunciado.
+% W1_phi = 220 endurece seguimiento lateral en baja frecuencia.
+% W2_phi crece de 0.80 a 3.20 para permitir control lento util, pero
+% penalizar mas el esfuerzo rapido de aileron cerca de la perturbacion.
 W1_phi = makeweight(220, wb, 0.05);
-wz_phi = wp;
-wp_phi = wz_phi * 3.20/0.80;
-W2_phi = 0.80*(s/wz_phi + 1)/(s/wp_phi + 1);
+W2_phi_low_gain = 0.80;
+W2_phi_high_gain = 3.20;
+W2_phi_cross = wp;
+wz_phi = W2_phi_cross;
+wp_phi = W2_phi_cross * W2_phi_high_gain / W2_phi_low_gain;
+W2_phi = W2_phi_low_gain*(s/wz_phi + 1)/(s/wp_phi + 1);
 W2_phi = minreal(W2_phi, minreal_tol);
 W3_phi = makeweight(0.005, wp, 15);
 

@@ -384,7 +384,7 @@ fprintf('Figuras guardadas en: %s\n', figures_dir);
 
 %% 11. Resumen y conclusiones
 fprintf('\n========================================\n');
-fprintf('  RESUMEN FINAL — Taller 1 UAV H-inf\n');
+fprintf('  RESUMEN FINAL - Taller 1 UAV H-inf\n');
 fprintf('========================================\n');
 fprintf('\nGanancias SAS/CAS:\n');
 fprintf('  D_q = %.2f | D_p = %.2f\n', D_q, D_p);

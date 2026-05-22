@@ -30,29 +30,32 @@ Todo esto se acumuló a lo largo de varias iteraciones de diseño y debugging.
 | `init_taller1_simulink.m` | Variables para Simulink | Se adapta |
 | `optimizar_pesos_hinf.m` | Barrido de pesos (exploración) | NO se incluye |
 | `barrido_suave_hinf_siso_phi.m` | Mini-ronda de exploración | NO se incluye |
-| `validacion_extrema_taller1.m` | Pruebas de estrés | Parcial (resultados) |
 
 ### 1.2 Estado del diseño H∞
 
-- **Theta (longitudinal):** Funciona bien. gamma=3.66, KS=4.30, tracking aceptable.
-- **Phi (lateral):** Mejorado tras iteraciones de pesos específicos. gamma=3.78, KS=3.08.
-  - Error final phi_30: 1.28 deg (OK, < 1.5)
-  - Error final phi_40: 1.94 deg (OK, < 2.0)
-  - `phi_sobrepasa` en `noise_dist_x3_hard`: 4.51 deg (flag residual en pruebas extremas)
-  - **NO satura de forma persistente** en escenarios nominales (< 1%)
-- **Conclusión:** H∞ SISO es presentable para el taller, con la nota honesta de que phi tiene un flag residual en pruebas extremas con ruido 3x.
+- **Theta (longitudinal):** Se conserva `W1` y se sube `W2_theta` para que no sature a 30 deg.
+- **Phi (lateral):** Se conserva `W1_phi=220` y se sube `W2_phi` de 4 a 12 para limitar aileron.
+  - Saturación H∞ theta_30: 0%
+  - Saturación H∞ phi_30: 0%
+  - Saturación H∞ theta_phi_30: 0%
+  - Para 40 deg se acepta saturación pequeña porque está fuera del límite exigido.
+- **Conclusión:** H∞ SISO queda presentable como diseño robusto con restricción explícita de actuador; el precio es un tracking menos agresivo.
 
 ### 1.3 Pesos finales a usar
 
 ```matlab
 % Theta
 W1_theta = makeweight(80, 2*pi*8, 0.05);
-W2_theta = 1.0;  % constante
+W2_theta = 5.0;  % constante, subido para no saturar a 30 deg
 W3_theta = makeweight(0.005, 2*pi*6, 15);
 
-% Phi (iteración 1 aceptada)
+% Phi (iteración aceptada con saturación nula a 30 deg)
 W1_phi = makeweight(220, 2*pi*8, 0.05);
-W2_phi = 0.80*(s/(2*pi*6) + 1) / (s/(2*pi*6 * 3.20/0.80) + 1);
+W2_phi_low_gain = 4.0;
+W2_phi_high_gain = 12.0;
+W2_phi_cross = 2*pi*6;
+W2_phi = W2_phi_low_gain*(s/W2_phi_cross + 1) / ...
+    (s/(W2_phi_cross*W2_phi_high_gain/W2_phi_low_gain) + 1);
 W3_phi = makeweight(0.005, 2*pi*6, 15);
 ```
 
@@ -313,7 +316,7 @@ Perturbación:
   - Senos a 6 Hz sumados después de saturación
 
 Planta:
-  - State-Space linmodel (14 estados, 8 entradas, 14 salidas)
+  - State-Space linmodel (13 estados, 8 entradas, 14 salidas)
   - Demux → theta, phi, p, q, r
 
 Yaw damper:
@@ -369,7 +372,6 @@ Logging:
 ### 7.1 ¿Qué NO se incluye?
 - `optimizar_pesos_hinf.m` → fue exploración, no diseño final
 - `barrido_suave_hinf_siso_phi.m` → fue exploración
-- `validacion_extrema_taller1.m` → los resultados se mencionan en conclusiones
 - Todos los READMEs, bitácoras y reportes intermedios
 - Todos los snapshots
 - Archivos `.mat` de resultados intermedios
@@ -405,25 +407,24 @@ Logging:
 
 | Eje | gamma | Orden K |
 |---|---:|---:|
-| theta | 3.660 | ~5-7 |
-| phi | 3.778 | ~5-7 |
+| theta | ~7.74 | ~5-7 |
+| phi | ~6.40 | ~5-7 |
 
 ### Sensibilidades comparadas
 
 | Lazo | ‖S‖ | ‖T‖ | ‖KS‖ |
 |---|---:|---:|---:|
 | theta SAS/CAS | 1.234 | 1.000 | 8.138 |
-| theta H∞ | 1.222 | 0.954 | 4.303 |
+| theta H∞ | 1.287 | 1.449 | 1.511 |
 | phi SAS/CAS | 2.050 | 1.225 | 1.317 |
-| phi H∞ | 1.333 | 1.010 | 3.080 |
+| phi H∞ | 1.254 | 0.967 | 1.264 |
 
-### Estado de phi H∞
+### Estado de saturación H∞
 
-- Error final phi_30: **1.28 deg** (cumple < 1.5)
-- Error final phi_40: **1.94 deg** (cumple < 2.0)
-- Saturación nominal: **< 1%**
-- Flag residual: `phi_sobrepasa` solo en pruebas extremas con ruido 3x
-- **No satura de forma persistente** en ningún escenario nominal
+- theta_30: **0%**
+- phi_30: **0%**
+- theta_phi_30: **0%**
+- Para 40 deg se permite saturación pequeña por estar fuera del límite requerido.
 
 ---
 
@@ -434,10 +435,10 @@ Logging:
    especificaciones de forma sistemática.
 3. La comparación NO es "uno es mejor que otro" sino compromiso:
    - SAS/CAS: simple, poco aileron, tracking directo
-   - H∞: mejor RMS global, T baja en alta frecuencia (rechazo de ruido),
-     pero KS lateral mayor
+   - H∞: compromiso explícito entre tracking, ruido y esfuerzo de actuador
 4. Las figuras clave son:
    - Sensibilidades por eje (con cotas de peso)
+   - Pesos inversos `1/W1`, `1/W2`, `1/W3` en una sola gráfica por eje
    - Simulaciones phi_10, phi_30, phi_40 (donde se ve la diferencia)
    - Barras de RMS y saturación
 5. Las conclusiones deben ser honestas sobre las limitaciones del H∞ SISO.

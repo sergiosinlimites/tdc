@@ -1,6 +1,6 @@
-%% Inicializacion de variables para taller1_simulink.slx
-% Carga todo lo necesario en el base workspace para que el modelo Simulink
-% pueda ejecutarse directamente.
+%% Inicializacion de variables para taller1_simulink_v2.slx
+% Carga plantas SISO, controladores y parametros para los 4 lazos
+% independientes del modelo v2.
 
 project_dir = fileparts(mfilename('fullpath'));
 repo_dir    = fileparts(project_dir);
@@ -11,22 +11,20 @@ if ~isfile(model_path)
     error('No se encontro modelo_lin.mat en: %s', model_path);
 end
 
-% --- Especificaciones ---
+%% Especificaciones
 control_limit_deg = 30;
 umax = deg2rad(control_limit_deg);
 wb   = 2*pi*8;
 wp   = 2*pi*6;
-noise_power_long = 1e-4;
-noise_power_lat  = 1e-3;
 minreal_tol = 1e-6;
 
-% --- Ganancias SAS/CAS ---
+%% Ganancias SAS/CAS
 kp_theta = -1.00;  ki_theta = -0.30;  kd_theta = -0.20;
 kp_phi   = -0.35;  ki_phi   = -0.18;  kd_phi   =  0.05;
 yaw_damper_gain = 0.065;
 yaw_damper_pole = -2.0;
 
-% --- Cargar y preparar la planta ---
+%% Cargar modelo
 data = load(model_path);
 plant_full = ss(data.linmodel);
 plant_lat  = ss(data.latmod);
@@ -39,21 +37,23 @@ full_outputs = {'V','beta','alpha','h','phi','theta','psi','p','q','r', ...
 plant_full.InputName  = full_inputs;
 plant_full.OutputName = full_outputs;
 
-% Matrices de la planta completa
-[A_full, B_full, C_full, ~] = ssdata(plant_full);
-idx_theta = find(strcmp(full_outputs, 'theta'));
-idx_phi   = find(strcmp(full_outputs, 'phi'));
-idx_p     = find(strcmp(full_outputs, 'p'));
-idx_q     = find(strcmp(full_outputs, 'q'));
-idx_r     = find(strcmp(full_outputs, 'r'));
-C_sim = C_full([idx_theta idx_phi idx_p idx_q idx_r], :);
-D_sim = zeros(5, size(B_full, 2));
-
-% --- Canales SISO ---
+%% Canales SISO para los lazos independientes
 G_theta = minreal(plant_long('theta','elevator'), minreal_tol);
 G_phi   = minreal(plant_lat('phi','aileron'), minreal_tol);
+G_q     = minreal(plant_long('q','elevator'), minreal_tol);
+G_p     = minreal(plant_lat('p','aileron'), minreal_tol);
 
-% --- Controladores H-inf ---
+[Gtheta_A, Gtheta_B, Gtheta_C, Gtheta_D] = ssdata(G_theta);
+[Gphi_A,   Gphi_B,   Gphi_C,   Gphi_D]   = ssdata(G_phi);
+[Gq_A,     Gq_B,     Gq_C,     Gq_D]     = ssdata(G_q);
+[Gp_A,     Gp_B,     Gp_C,     Gp_D]     = ssdata(G_p);
+
+n_theta = size(Gtheta_A, 1);
+n_phi   = size(Gphi_A, 1);
+n_q     = size(Gq_A, 1);
+n_p     = size(Gp_A, 1);
+
+%% Controladores H-inf
 s = tf('s');
 
 W1_theta_low_gain = 80;
@@ -62,9 +62,6 @@ W1_theta = makeweight(W1_theta_low_gain, wb, 0.05);
 W2_theta = W2_theta_gain;
 W3_theta = makeweight(0.005, wp, 15);
 
-% wp = 2*pi*6 representa la frecuencia de perturbacion de 6 Hz del
-% enunciado. Los pesos de esfuerzo se suben para que H-inf no sature en
-% referencias de 30 deg: W2_phi aumenta de 4 a 12 y W2_theta queda en 5.
 W1_phi_low_gain = 220;
 W1_phi = makeweight(W1_phi_low_gain, wb, 0.05);
 W2_phi_low_gain = 4.0;
@@ -82,13 +79,16 @@ K_theta_hinf = minreal(ss(K_theta_hinf), minreal_tol);
 K_phi_hinf = minreal(ss(K_phi_hinf), minreal_tol);
 
 [Ktheta_A, Ktheta_B, Ktheta_C, Ktheta_D] = ssdata(K_theta_hinf);
-[Kphi_A, Kphi_B, Kphi_C, Kphi_D]         = ssdata(K_phi_hinf);
+[Kphi_A,   Kphi_B,   Kphi_C,   Kphi_D]   = ssdata(K_phi_hinf);
 
-% --- Yaw damper ---
+n_Ktheta = size(Ktheta_A, 1);
+n_Kphi   = size(Kphi_A, 1);
+
+%% Yaw damper (washout)
 yaw_tf = zpk(0, yaw_damper_pole, yaw_damper_gain);
 [Kyaw_A, Kyaw_B, Kyaw_C, Kyaw_D] = ssdata(ss(yaw_tf));
 
-% --- CAS PI como funcion de transferencia ---
+%% PI como transfer function (para PID blocks)
 CAS_PI_theta = kp_theta + ki_theta/s;
 CAS_PI_phi   = kp_phi   + ki_phi/s;
 [cas_pi_theta_num, cas_pi_theta_den] = tfdata(CAS_PI_theta, 'v');
@@ -96,18 +96,24 @@ CAS_PI_phi   = kp_phi   + ki_phi/s;
 sas_D_q = kd_theta;
 sas_D_p = kd_phi;
 
-% --- Parametros de simulacion ---
-theta_ref_step = deg2rad(10);
-phi_ref_step   = deg2rad(10);
+%% Parametros de escenario (configurables por el usuario antes de simular)
+theta_ref_amp = deg2rad(10);
+phi_ref_amp   = deg2rad(10);
 t_step  = 1.0;
 t_final = 12.0;
-noise_var_theta    = noise_power_long;
-noise_var_phi      = noise_power_lat;
-noise_sample_time  = 0.005;
-dist_amp  = deg2rad(1.0);
-dist_freq = 2*pi*6;
 
-% 1 = H-inf, 0 = SAS/CAS
-control_mode = 1;
+noise_power_long  = 1e-4;
+noise_power_lat   = 1e-3;
+noise_sample_time = 0.005;
+noise_enabled     = 1;
 
-fprintf('init_simulink.m: variables cargadas para taller1_simulink.slx\n');
+dist_amp     = deg2rad(1.0);
+dist_freq    = 2*pi*6;
+dist_enabled = 1;
+
+fprintf('init_simulink_v2.m: variables cargadas para taller1_simulink_v2.slx\n');
+fprintf('  Plantas: G_theta(%d), G_phi(%d), G_q(%d), G_p(%d)\n', ...
+    n_theta, n_phi, n_q, n_p);
+fprintf('  Controladores Hinf: K_theta(%d), K_phi(%d)\n', n_Ktheta, n_Kphi);
+fprintf('  Parametros: umax=%.1f deg, ref_theta=%.1f deg, ref_phi=%.1f deg\n', ...
+    rad2deg(umax), rad2deg(theta_ref_amp), rad2deg(phi_ref_amp));

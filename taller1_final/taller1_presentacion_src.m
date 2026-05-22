@@ -35,7 +35,7 @@
 %% 3. Modelo del UAV
 % El modelo lineal se entrego como |modelo_lin.mat| con tres objetos:
 %
-% * |linmodel| — modelo completo (14 estados, 8 entradas, 14 salidas)
+% * |linmodel| — modelo completo (13 estados, 8 entradas, 14 salidas)
 % * |longmod| — modelo longitudinal desacoplado
 % * |latmod| — modelo lateral desacoplado
 
@@ -167,26 +167,43 @@ end
 % *Theta:*
 %
 %  W1_theta = makeweight(80, 2*pi*8, 0.05)
-%  W2_theta = 1.0 (constante)
+%  W2_theta = 5.0 (constante)
 %  W3_theta = makeweight(0.005, 2*pi*6, 15)
 %
-% *Phi (iteracion optimizada):*
+% *Phi (iteracion ajustada para no saturar a 30 deg):*
 %
-%  W1_phi = makeweight(220, 2*pi*8, 0.05)
-%  W2_phi = 0.80*(s/(2*pi*6) + 1) / (s/(2*pi*6*3.20/0.80) + 1)
+%  W1_phi = makeweight(220, wb, 0.05)
+%  W2_phi_low_gain = 4.0
+%  W2_phi_high_gain = 12.0
+%  W2_phi_cross = wp = 2*pi*6
+%  wp_phi = W2_phi_cross*W2_phi_high_gain/W2_phi_low_gain
+%  W2_phi = W2_phi_low_gain*(s/W2_phi_cross + 1)/(s/wp_phi + 1)
 %  W3_phi = makeweight(0.005, 2*pi*6, 15)
 %
 % Justificacion:
 %
+% * $w_p = 2\pi \cdot 6$ rad/s aparece porque el enunciado especifica
+%   perturbaciones hasta 6 Hz; MATLAB usa rad/s en modelos continuos.
 % * $W_1$ grande a baja frecuencia fuerza $S$ pequeno (buen seguimiento)
+% * $W1_\phi = 220$ refuerza seguimiento lateral frente a la version base
 % * $W_2$ penaliza esfuerzo de control para evitar saturacion
+% * En theta, $W_2 = 5$ reduce los picos de elevator frente a la version
+%   anterior con $W_2 = 1$
+% * En phi, $W_2$ crece de 4 a 12: permite esfuerzo de baja
+%   frecuencia, pero castiga mas el control rapido de aileron
+% * El factor $12/4$ fija la separacion entre la ganancia alta y baja
 % * $W_3$ grande a alta frecuencia fuerza $T$ pequeno (rechazo de ruido)
+%
+% Estos numeros no son una derivacion cerrada del enunciado. Vienen de los
+% barridos documentados en la bitacora y en los reportes de resultados. La
+% version final prioriza una restriccion fisica: H-inf no debe saturar para
+% referencias de 30 deg, aunque eso haga el seguimiento menos agresivo.
 
 %%
 % *7.3 Resultados de la sintesis:*
 %
-%  Theta: gamma = 3.660, orden K ~ 5-7
-%  Phi:   gamma = 3.778, orden K ~ 5-7
+%  Theta: gamma ~= 7.74, orden K ~ 5-7
+%  Phi:   gamma ~= 6.40, orden K ~ 5-7
 %  Ambos controladores estables, lazos cerrados estables.
 
 %% 8. Analisis de sensibilidades
@@ -194,9 +211,9 @@ end
 %
 %  Lazo            ||S||    ||T||    ||KS||
 %  theta SAS/CAS   1.234    1.000    8.138
-%  theta H-inf     1.222    0.954    4.303
+%  theta H-inf     1.287    1.449    1.511
 %  phi   SAS/CAS   2.050    1.225    1.317
-%  phi   H-inf     1.333    1.010    3.080
+%  phi   H-inf     1.254    0.967    1.264
 
 %%
 % *Sensibilidades por eje:*
@@ -214,6 +231,25 @@ if exist(fullfile(figures_dir, 'sensibilidades_phi.png'), 'file')
 end
 
 %%
+% *Cotas inversas de los pesos:*
+%
+% La figura siguiente pone $1/W_1$, $1/W_2$ y $1/W_3$ en la misma grafica
+% por eje. Esas curvas se leen como limites deseados:
+%
+% * $1/W_1$ limita $S$: mientras mas baja sea la curva, mas exigente es el
+%   seguimiento/rechazo de perturbaciones a esa frecuencia.
+% * $1/W_2$ limita $KS$: mientras mas baja sea, menos esfuerzo de actuador
+%   se permite. Por eso subir $W_2$ fue la correccion clave contra
+%   saturacion.
+% * $1/W_3$ limita $T$: baja a alta frecuencia implica menor paso de ruido
+%   de medicion y dinamicas no modeladas hacia la salida.
+
+if exist(fullfile(figures_dir, 'pesos_inversos_hinf.png'), 'file')
+    imshow(fullfile(figures_dir, 'pesos_inversos_hinf.png'));
+    title('Cotas inversas 1/W1, 1/W2 y 1/W3');
+end
+
+%%
 % *Comparacion 3x2:*
 
 if exist(fullfile(figures_dir, 'comparacion_sensibilidades.png'), 'file')
@@ -222,12 +258,45 @@ if exist(fullfile(figures_dir, 'comparacion_sensibilidades.png'), 'file')
 end
 
 %% 9. Simulacion y resultados
-% La simulacion se realiza sobre |linmodel| acoplado (14 estados) con:
+% La simulacion se realiza sobre |linmodel| acoplado (13 estados) con:
 %
 % * Saturacion de actuadores a $\pm 30$ deg
 % * Anti-windup para el integrador del PID
 % * Ruido de medicion y perturbacion sinusoidal a 6 Hz
 % * Integracion con |ode45| (RelTol $10^{-6}$, AbsTol $10^{-8}$)
+%
+% *Objetivo de los escenarios:*
+%
+% * |theta_10| y |phi_10|: respuesta nominal de cada eje por separado.
+% * |theta_minus_10| y |phi_minus_10|: simetria ante referencias negativas.
+% * |theta_phi_10| y |theta_phi_30|: acoplamiento cuando pitch y roll se
+%   piden al mismo tiempo.
+% * |theta_30|, |phi_30|, |theta_40| y |phi_40|: cercania al limite de
+%   referencia y de actuador.
+% * |noise_disturbance|: robustez frente a ruido de medicion y perturbacion
+%   sinusoidal a 6 Hz.
+%
+% *Estados internos del controlador:*
+%
+% En el caso SAS/CAS, |ctrl.nx = 3| porque se simulan tres estados internos:
+% el integrador de theta, el integrador de phi y el estado del yaw damper.
+%
+% En el caso H-inf, el controlador es dinamico. Por eso se usa:
+%
+%  ctrl.n_theta = size(ctrl.theta.A, 1)
+%  ctrl.n_phi   = size(ctrl.phi.A, 1)
+%  ctrl.nx = ctrl.n_theta + ctrl.n_phi + 1
+%
+% El ultimo |+1| corresponde al yaw damper. Asi el vector de estado total
+% de la simulacion es |[x_planta; x_controlador]|.
+%
+% *Funcion |simulate_case|:*
+%
+% |simulate_case| ejecuta un escenario completo. Primero crea la grilla de
+% tiempo, luego genera ruido si el escenario lo activa, arma el estado
+% inicial de planta y controlador, integra con |ode45| y finalmente
+% reconstruye referencias, salidas, comandos crudos, comandos saturados y
+% metricas de RMS/error/saturacion.
 
 %%
 % *Respuestas seleccionadas:*
@@ -280,7 +349,18 @@ if exist(fullfile(figures_dir, 'comparacion_saturacion_final.png'), 'file')
     title('Comparacion de saturacion por escenario');
 end
 
-%% 10. Discusion y conclusiones
+%% 10. Gamma H-inf
+% La comparacion de gamma resume que el problema H-inf sigue siendo
+% factible, pero ahora con pesos de control mas estrictos. El aumento de
+% gamma frente a la version anterior es esperable: se le esta pidiendo al
+% controlador que respete mejor el actuador.
+
+if exist(fullfile(figures_dir, 'comparacion_gamma_hinf.png'), 'file')
+    imshow(fullfile(figures_dir, 'comparacion_gamma_hinf.png'));
+    title('Gamma H-inf por eje');
+end
+
+%% 11. Discusion y conclusiones
 %
 % *Fortalezas SAS/CAS:*
 %
@@ -290,27 +370,28 @@ end
 %
 % *Fortalezas H-inf:*
 %
-% * Mejor RMS global de tracking
+% * Diseno explicito con compromiso entre tracking, ruido y control
 % * $T$ baja en alta frecuencia (rechazo de ruido)
 % * Garantias formales de robustez via $\gamma$
 %
-% *Limitaciones H-inf SISO en phi:*
+% *Limitaciones y compromiso final de H-inf:*
 %
-% * $\|KS\|_\infty$ lateral mayor que SAS/CAS
-% * Flag residual |phi_sobrepasa| solo en pruebas extremas con ruido 3x
-% * No satura de forma persistente en escenarios nominales (< 1%)
+% * Al subir $W_2$, H-inf deja de saturar en los escenarios de 30 deg
+% * El precio es un seguimiento mas lento que la version H-inf anterior
+% * Para 40 deg puede aparecer saturacion pequena, porque esta referencia
+%   esta por fuera del limite exigido para el actuador
 %
 % *Estado de phi H-inf:*
 %
-% * Error final phi_30: *1.28 deg* (cumple < 1.5)
-% * Error final phi_40: *1.94 deg* (cumple < 2.0)
+% * Saturacion phi_30: *0%*
+% * Saturacion theta_phi_30: *0%*
 %
 % *Extension natural:*
 %
 % * H-inf MIMO para manejar acoplamiento theta-phi
 % * Integracion explicita en el controlador robusto
 
-%% 11. Referencias
+%% 12. Referencias
 %
 % # Enunciado del Taller 1 — Teoria de Control Digital
 % # Notas de clase: Sofrony_c.pdf

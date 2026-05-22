@@ -192,19 +192,25 @@ fprintf('\nPID theta estable: %d | PID phi estable: %d\n', ...
 %% 7. Diseno H-inf por sensibilidad mixta
 fprintf('\n=== Diseno H-inf ===\n');
 
-% 7.1 Pesos para theta
-W1_theta = makeweight(80, wb, 0.05);
-W2_theta = 1.0;
+% 7.1 Pesos para theta.
+% W2_theta se aumento de 1.0 a 5.0 porque el requerimiento practico del
+% taller es no saturar actuadores para referencias de 30 deg.
+W1_theta_low_gain = 80;
+W2_theta_gain = 5.0;
+W1_theta = makeweight(W1_theta_low_gain, wb, 0.05);
+W2_theta = W2_theta_gain;
 W3_theta = makeweight(0.005, wp, 15);
 
-% 7.2 Pesos para phi (iteracion aceptada del barrido).
+% 7.2 Pesos para phi (iteracion aceptada con saturacion nula a 30 deg).
 % wp = 2*pi*6 viene de la perturbacion de 6 Hz del enunciado.
 % W1_phi = 220 endurece seguimiento lateral en baja frecuencia.
-% W2_phi crece de 0.80 a 3.20 para permitir control lento util, pero
-% penalizar mas el esfuerzo rapido de aileron cerca de la perturbacion.
-W1_phi = makeweight(220, wb, 0.05);
-W2_phi_low_gain = 0.80;
-W2_phi_high_gain = 3.20;
+% W2_phi crece de 4.0 a 12.0 para limitar esfuerzo de aileron: penaliza
+% menos el control lento util y mas los picos rapidos que llevan a saturar.
+% La razon 12/4 fija la separacion entre ganancia alta y baja del peso.
+W1_phi_low_gain = 220;
+W1_phi = makeweight(W1_phi_low_gain, wb, 0.05);
+W2_phi_low_gain = 4.0;
+W2_phi_high_gain = 12.0;
 W2_phi_cross = wp;
 wz_phi = W2_phi_cross;
 wp_phi = W2_phi_cross * W2_phi_high_gain / W2_phi_low_gain;
@@ -316,6 +322,136 @@ for k = 1:numel(scenarios)
         m.phi_rms_error_deg, 100*m.sat_fraction);
 end
 
+% 9.4 Empaquetar resultados con nombres compatibles con taller1/.
+cfg.project_dir = project_dir;
+cfg.repo_dir = repo_dir;
+cfg.data.model_path = model_path;
+cfg.figures_dir = figures_dir;
+cfg.results_dir = results_dir;
+cfg.minreal_tol = minreal_tol;
+cfg.spec.ref_max_deg = ref_max_deg;
+cfg.spec.control_limit_deg = control_limit_deg;
+cfg.spec.control_limit_rad = control_limit_rad;
+cfg.spec.bandwidth_hz = bandwidth_hz;
+cfg.spec.perturbation_hz = perturbation_hz;
+cfg.spec.wb = wb;
+cfg.spec.wp = wp;
+cfg.spec.noise_power_long = noise_power_long;
+cfg.spec.noise_power_lat = noise_power_lat;
+cfg.pid.kp_theta = kp_theta;
+cfg.pid.ki_theta = ki_theta;
+cfg.pid.kd_theta = kd_theta;
+cfg.pid.kp_phi = kp_phi;
+cfg.pid.ki_phi = ki_phi;
+cfg.pid.kd_phi = kd_phi;
+cfg.pid.derivative_tau = derivative_tau;
+cfg.pid.antiwindup = antiwindup_gain;
+cfg.pid.yaw_damper_gain = yaw_damper_gain;
+cfg.pid.yaw_damper_pole = yaw_damper_pole;
+cfg.hinf.theta.W1_low_gain = W1_theta_low_gain;
+cfg.hinf.theta.W2_gain = W2_theta;
+cfg.hinf.theta.W3_high_gain = 15;
+cfg.hinf.phi.W1_low_gain = W1_phi_low_gain;
+cfg.hinf.phi.W2_low_gain = W2_phi_low_gain;
+cfg.hinf.phi.W2_high_gain = W2_phi_high_gain;
+cfg.hinf.phi.W2_cross_frequency = W2_phi_cross;
+cfg.hinf.phi.W3_high_gain = 15;
+cfg.sim.t_final = t_final;
+cfg.sim.dt = dt;
+cfg.sim.t_step = t_step;
+cfg.sim.disturbance_start = disturbance_start;
+cfg.sim.disturbance_amp_rad = disturbance_amp_rad;
+cfg.sim.rng_seed = rng_seed;
+cfg.scenarios = scenarios;
+
+plant.full = plant_full;
+plant.lat = plant_lat;
+plant.long = plant_long;
+
+channels.theta = G_theta;
+channels.q = G_q;
+channels.phi = G_phi;
+channels.p = G_p;
+channels.r = G_r;
+channels.angle_mimo = G_mimo;
+channels.lat_mimo = G_lat_mimo;
+
+analysis.full.poles = poles_full;
+analysis.lat.poles = poles_lat;
+analysis.long.poles = poles_long;
+analysis.theta.zeros = tzeros_theta;
+analysis.theta.dcgain = dc_theta;
+analysis.phi.zeros = tzeros_phi;
+analysis.phi.dcgain = dc_phi;
+analysis.full.controllability_rank = ctrl_rank_full;
+analysis.full.observability_rank = obsv_rank_full;
+
+pid_data.K_theta = K_theta_pid;
+pid_data.K_phi = K_phi_pid;
+pid_data.gains = cfg.pid;
+pid_data.sas.D_q = D_q;
+pid_data.sas.D_p = D_p;
+pid_data.sas.D_r = D_r;
+pid_data.sas.theta_inner_stable = isstable(G_q_inner);
+pid_data.sas.phi_inner_stable = isstable(G_p_inner);
+pid_data.sas.yaw_inner_stable = isstable(G_r_inner);
+pid_data.cas.theta.Kp = kp_theta;
+pid_data.cas.theta.Ki = ki_theta;
+pid_data.cas.theta.margin_gain_db = 20*log10(gm_theta);
+pid_data.cas.theta.margin_phase_deg = pm_theta;
+pid_data.cas.phi.Kp = kp_phi;
+pid_data.cas.phi.Ki = ki_phi;
+pid_data.cas.phi.margin_gain_db = 20*log10(gm_phi);
+pid_data.cas.phi.margin_phase_deg = pm_phi;
+pid_data.theta_loop = theta_loop_pid;
+pid_data.phi_loop = phi_loop_pid;
+pid_data.theta_stable = isstable(theta_loop_pid);
+pid_data.phi_stable = isstable(phi_loop_pid);
+
+hinf_data.K_theta = K_theta_hinf;
+hinf_data.K_phi = K_phi_hinf;
+hinf_data.weights.theta.W1 = W1_theta;
+hinf_data.weights.theta.W2 = W2_theta;
+hinf_data.weights.theta.W3 = W3_theta;
+hinf_data.weights.phi.W1 = W1_phi;
+hinf_data.weights.phi.W2 = W2_phi;
+hinf_data.weights.phi.W3 = W3_phi;
+hinf_data.weights.W1 = W1_theta;
+hinf_data.weights.W2 = W2_theta;
+hinf_data.weights.W3 = W3_theta;
+hinf_data.theta.K = K_theta_hinf;
+hinf_data.theta.CL = CL_theta;
+hinf_data.theta.gamma = gamma_theta;
+hinf_data.theta.info = info_theta;
+hinf_data.theta.order = order(K_theta_hinf);
+hinf_data.theta.controller_stable = isstable(K_theta_hinf);
+hinf_data.theta.closed_loop_stable = isstable(CL_theta);
+hinf_data.phi.K = K_phi_hinf;
+hinf_data.phi.CL = CL_phi;
+hinf_data.phi.gamma = gamma_phi;
+hinf_data.phi.info = info_phi;
+hinf_data.phi.order = order(K_phi_hinf);
+hinf_data.phi.controller_stable = isstable(K_phi_hinf);
+hinf_data.phi.closed_loop_stable = isstable(CL_phi);
+
+sens.weights = hinf_data.weights;
+sens.theta.pid = make_sens_record(S_pid_theta, T_pid_theta, KS_pid_theta, ...
+    nS_pid_theta, nT_pid_theta, nKS_pid_theta);
+sens.theta.hinf = make_sens_record(S_hinf_theta, T_hinf_theta, KS_hinf_theta, ...
+    nS_hinf_theta, nT_hinf_theta, nKS_hinf_theta);
+sens.phi.pid = make_sens_record(S_pid_phi, T_pid_phi, KS_pid_phi, ...
+    nS_pid_phi, nT_pid_phi, nKS_pid_phi);
+sens.phi.hinf = make_sens_record(S_hinf_phi, T_hinf_phi, KS_hinf_phi, ...
+    nS_hinf_phi, nT_hinf_phi, nKS_hinf_phi);
+
+sim_results.pid = sim_pid;
+sim_results.hinf = sim_hinf;
+sim_results.summary = summarize_simulations(sim_pid, sim_hinf);
+
+save(fullfile(results_dir, 'taller1_results.mat'), 'cfg', 'plant', ...
+    'channels', 'analysis', 'pid_data', 'hinf_data', 'sens', ...
+    'sim_results');
+
 %% 10. Generacion de figuras
 fprintf('\n=== Generando figuras ===\n');
 
@@ -360,6 +496,9 @@ plot_axis_sensitivities('phi', ...
     S_hinf_phi, T_hinf_phi, KS_hinf_phi, ...
     W1_phi, W2_phi, W3_phi, w_plot, ...
     fullfile(figures_dir, 'sensibilidades_phi.png'));
+plot_inverse_weight_summary(W1_theta, W2_theta, W3_theta, ...
+    W1_phi, W2_phi, W3_phi, w_plot, ...
+    fullfile(figures_dir, 'pesos_inversos_hinf.png'));
 
 % 10.5 Comparacion de sensibilidades 3x2
 fig = make_white_figure('Comparacion S T KS');
@@ -388,8 +527,10 @@ end
 % 10.7 Barras comparativas RMS y saturacion
 plot_rms_bars(sim_pid, sim_hinf, figures_dir);
 plot_sat_bars(sim_pid, sim_hinf, figures_dir);
+plot_gamma_summary(gamma_theta, gamma_phi, figures_dir);
 
 fprintf('Figuras guardadas en: %s\n', figures_dir);
+fprintf('Resultados guardados en: %s\n', results_dir);
 
 %% 11. Resumen y conclusiones
 fprintf('\n========================================\n');
@@ -416,8 +557,8 @@ fprintf('  %-14s %7.3f %7.3f %7.3f\n', 'phi H-inf', ...
     nS_hinf_phi, nT_hinf_phi, nKS_hinf_phi);
 fprintf('\nConclusiones:\n');
 fprintf('  - SAS/CAS: simple, poco esfuerzo de actuador, tracking directo.\n');
-fprintf('  - H-inf: mejor RMS global, T baja en alta frecuencia.\n');
-fprintf('  - H-inf SISO phi: KS lateral mayor, flag residual en pruebas extremas.\n');
+fprintf('  - H-inf: W2 se ajusto para evitar saturacion en referencias de 30 deg.\n');
+fprintf('  - H-inf: el seguimiento es menos agresivo, pero respeta el actuador.\n');
 fprintf('  - Extension natural: H-inf MIMO para manejar acoplamiento.\n');
 fprintf('\n=== Taller 1 completado ===\n');
 
@@ -440,7 +581,40 @@ function n = safe_norminf(sys)
     end
 end
 
+function rec = make_sens_record(S, T, KS, norm_S, norm_T, norm_KS)
+    rec.S = S;
+    rec.T = T;
+    rec.KS = KS;
+    rec.norm_S = norm_S;
+    rec.norm_T = norm_T;
+    rec.norm_KS = norm_KS;
+end
+
+function summary = summarize_simulations(sim_pid, sim_hinf)
+    summary = [];
+    families = {sim_pid, sim_hinf};
+    names = {'pid', 'hinf'};
+    row = 0;
+    for c = 1:numel(families)
+        family = families{c};
+        for k = 1:numel(family)
+            row = row + 1;
+            m = family(k).metrics;
+            summary(row).controller = names{c}; %#ok<AGROW>
+            summary(row).scenario = family(k).name; %#ok<AGROW>
+            summary(row).theta_rms_error_deg = m.theta_rms_error_deg; %#ok<AGROW>
+            summary(row).phi_rms_error_deg = m.phi_rms_error_deg; %#ok<AGROW>
+            summary(row).theta_final_error_deg = m.theta_final_error_deg; %#ok<AGROW>
+            summary(row).phi_final_error_deg = m.phi_final_error_deg; %#ok<AGROW>
+            summary(row).sat_fraction = m.sat_fraction; %#ok<AGROW>
+        end
+    end
+end
+
 function scenarios = make_scenarios()
+    % Los escenarios prueban tracking nominal, simetria, acoplamiento y
+    % robustez. Todos usan la misma planta acoplada; solo cambian
+    % referencias, ruido y perturbacion.
     scenarios(1)  = make_scenario('theta_10',        10,  0, false, false);
     scenarios(2)  = make_scenario('theta_minus_10', -10,  0, false, false);
     scenarios(3)  = make_scenario('phi_10',           0, 10, false, false);
@@ -476,7 +650,7 @@ function idx = make_indices(sys)
 end
 
 function ctrl = make_pid_controller(kp_th, ki_th, kd_th, ...
-        kp_ph, ki_ph, kd_ph, ~, aw, yd_gain, yd_pole)
+        kp_ph, ki_ph, kd_ph, derivative_tau, aw, yd_gain, yd_pole)
     ctrl.type = 'pid';
     ctrl.pid.kp_theta = kp_th;
     ctrl.pid.ki_theta = ki_th;
@@ -484,9 +658,12 @@ function ctrl = make_pid_controller(kp_th, ki_th, kd_th, ...
     ctrl.pid.kp_phi   = kp_ph;
     ctrl.pid.ki_phi   = ki_ph;
     ctrl.pid.kd_phi   = kd_ph;
+    ctrl.pid.derivative_tau = derivative_tau;
     ctrl.pid.antiwindup = aw;
     yaw_tf = zpk(0, yd_pole, yd_gain);
     [ctrl.yaw.A, ctrl.yaw.B, ctrl.yaw.C, ctrl.yaw.D] = ssdata(ss(yaw_tf));
+    % Tres estados internos: integrador de theta, integrador de phi y
+    % estado dinamico del yaw damper.
     ctrl.nx = 3;
 end
 
@@ -500,12 +677,20 @@ function ctrl = make_hinf_controller(K_theta, K_phi, yd_gain, yd_pole)
     [ctrl.yaw.A, ctrl.yaw.B, ctrl.yaw.C, ctrl.yaw.D] = ssdata(ss(yaw_tf));
     ctrl.n_theta = size(ctrl.theta.A, 1);
     ctrl.n_phi   = size(ctrl.phi.A, 1);
+    % Estados totales: controlador H-inf de theta + controlador H-inf de
+    % phi + el estado del yaw damper compartido.
     ctrl.nx = ctrl.n_theta + ctrl.n_phi + 1;
 end
 
 function sim = simulate_case(ctrl_name, A, B, C, n_plant, idx, ctrl, ...
         scenario, t_final, dt, t_step, ulim, ...
         np_long, np_lat, dist_start, dist_amp, pert_hz)
+    % SIMULATE_CASE ejecuta un escenario completo de lazo cerrado.
+    % 1) crea una grilla fija para referencias, ruido y salidas,
+    % 2) genera ruido reproducible solo si el escenario lo pide,
+    % 3) arma el estado inicial [planta; controlador],
+    % 4) integra planta y controlador con ode45,
+    % 5) reconstruye salidas, controles saturados/crudos y metricas.
     t_grid = (0:dt:t_final).';
     noise = gen_noise(t_grid, np_long, np_lat, scenario);
     z0 = zeros(n_plant + ctrl.nx, 1);
@@ -522,6 +707,8 @@ end
 
 function dz = cl_ode(t, z, A, B, C, np, idx, ctrl, sc, tg, noise, ...
         t_step, ulim, ds, da, ph)
+    % Estado combinado: primero van los estados de la planta y despues los
+    % estados internos del controlador que corresponda al modo simulado.
     x  = z(1:np);
     xc = z(np+1:end);
     y  = C*x;
@@ -533,8 +720,10 @@ function dz = cl_ode(t, z, A, B, C, np, idx, ctrl, sc, tg, noise, ...
     dz = [xdot; xcdot];
 end
 
-function sim = reconstruct_sim(t, z, A, B, C, np, idx, ctrl, sc, ...
+function sim = reconstruct_sim(t, z, ~, B, C, np, idx, ctrl, sc, ...
         tg, noise, ctrl_name, t_step, ulim, ds, da, ph, t_final)
+    % Reconstruye punto por punto las senales que no salen directamente de
+    % ode45: referencias, mediciones, comandos crudos y comandos saturados.
     nt = numel(t);
     x  = z(:, 1:np);
     xc = z(:, np+1:end);
@@ -594,6 +783,8 @@ function sim = reconstruct_sim(t, z, A, B, C, np, idx, ctrl, sc, ...
 end
 
 function noise = gen_noise(t, np_long, np_lat, sc)
+    % Ruido blanco muestreado en la misma grilla de integracion. Se separan
+    % potencias longitudinales y laterales como en el enunciado.
     nt = numel(t);
     if sc.noise_enabled
         noise.theta = sqrt(np_long)*randn(nt,1);
@@ -611,6 +802,8 @@ function noise = gen_noise(t, np_long, np_lat, sc)
 end
 
 function n = interp_noise(t, tg, noise)
+    % Se usa retencion de muestra simple para que el ruido sea reproducible
+    % y no dependa de los pasos internos adaptativos de ode45.
     k = min(max(1, floor((t - tg(1))/(tg(2)-tg(1))) + 1), numel(tg));
     n.theta = noise.theta(k);
     n.q     = noise.q(k);
@@ -620,6 +813,8 @@ function n = interp_noise(t, tg, noise)
 end
 
 function sig = build_signals(t, y, n, idx, sc, t_step)
+    % Empaqueta referencias, salidas medidas y errores. El escalon se
+    % activa despues de t_step para arrancar el sistema en equilibrio.
     if t >= t_step
         sig.theta_ref = sc.theta_ref_rad;
         sig.phi_ref   = sc.phi_ref_rad;
@@ -642,6 +837,8 @@ function sig = build_signals(t, y, n, idx, sc, t_step)
 end
 
 function [u_sat, u_raw, xcdot] = ctrl_output(sig, xc, ctrl, ulim)
+    % Calcula la ley de control y la dinamica interna. u_raw permite medir
+    % cuanto pide el controlador; u_sat es lo que realmente recibe la planta.
     switch ctrl.type
         case 'pid'
             xi_th = xc(1);
@@ -682,6 +879,9 @@ function [u_sat, u_raw, xcdot] = ctrl_output(sig, xc, ctrl, ulim)
 end
 
 function u = build_full_input(u_sat, t, sc, ds, da, ph)
+    % Inserta elevator, rudder y aileron en el vector de 8 entradas del
+    % linmodel. La perturbacion se suma despues de la saturacion para
+    % representar una perturbacion externa de entrada.
     u = zeros(8,1);
     d = zeros(3,1);
     if sc.disturbance_enabled && t >= ds
@@ -803,6 +1003,36 @@ function plot_axis_sensitivities(axis_name, ...
     close(fig);
 end
 
+function plot_inverse_weight_summary(W1_theta, W2_theta, W3_theta, ...
+        W1_phi, W2_phi, W3_phi, w, filepath)
+    % Las inversas de los pesos son cotas deseadas: S debe quedar por
+    % debajo de 1/W1, KS por debajo de 1/W2 y T por debajo de 1/W3.
+    fig = make_white_figure('Pesos inversos Hinf');
+    tiledlayout(1,2);
+    plot_inverse_weight_tile('theta', W1_theta, W2_theta, W3_theta, w);
+    plot_inverse_weight_tile('phi', W1_phi, W2_phi, W3_phi, w);
+    export_png(fig, filepath);
+    close(fig);
+end
+
+function plot_inverse_weight_tile(axis_name, W1, W2, W3, w)
+    nexttile;
+    plot_sigma_response(1/W1, 'b-', '1/W1 seguimiento', w);
+    hold on;
+    if isa(W2, 'DynamicSystem')
+        plot_sigma_response(1/W2, 'r--', '1/W2 control', w);
+    else
+        semilogx(w, 20*log10((1/W2)*ones(size(w))), ...
+            'r--', 'LineWidth', 1.35, 'DisplayName', '1/W2 control');
+    end
+    plot_sigma_response(1/W3, 'k:', '1/W3 ruido', w);
+    style_axes();
+    xlabel('\omega [rad/s]');
+    ylabel('Magnitud [dB]');
+    title(['Cotas inversas ' axis_name]);
+    legend('Location','best');
+end
+
 function plot_compare_tile(pid_sys, hinf_sys, ttl, w)
     nexttile;
     plot_sigma_response(pid_sys, 'b-', 'SAS/CAS', w); hold on;
@@ -845,6 +1075,16 @@ function plot_case_pair(ps, hs, clim_deg, filepath)
     xlabel('t [s]');
 
     export_png(fig, filepath);
+    close(fig);
+end
+
+function plot_gamma_summary(gamma_theta, gamma_phi, fdir)
+    fig = make_white_figure('Comparacion gamma Hinf');
+    bar(categorical({'theta Hinf','phi Hinf'}), [gamma_theta gamma_phi]);
+    ylabel('gamma mixsyn');
+    title('Resultado de sintesis H-inf');
+    style_axes();
+    export_png(fig, fullfile(fdir, 'comparacion_gamma_hinf.png'));
     close(fig);
 end
 

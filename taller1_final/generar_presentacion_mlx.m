@@ -11,4 +11,5 @@ if ~isfile(src)
 end
 
 matlab.internal.liveeditor.openAndSave(src, dst);
-fprintf('Live Script generado: %s\n', dst);
+matlab.internal.liveeditor.executeAndSave(dst);
+fprintf('Live Script generado y ejecutado: %s\n', dst);

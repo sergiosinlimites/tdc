@@ -3,7 +3,7 @@
 % independientes del modelo v2.
 
 project_dir = fileparts(mfilename('fullpath'));
-repo_dir    = fileparts(project_dir);
+repo_dir    = fileparts(fileparts(project_dir));  % taller1_final/simulink -> taller1_final -> repo
 
 model_path = fullfile(repo_dir, 'drive', 'TDC', '02. TAREAS', ...
     'T1', 'modelo_lin.mat');
@@ -97,10 +97,10 @@ sas_D_q = kd_theta;
 sas_D_p = kd_phi;
 
 %% Parametros de escenario (configurables por el usuario antes de simular)
-theta_ref_amp = deg2rad(10);
-phi_ref_amp   = deg2rad(10);
+theta_ref_amp = deg2rad(20);
+phi_ref_amp   = deg2rad(20);
 t_step  = 1.0;
-t_final = 12.0;
+t_final = 50.0;
 
 noise_power_long  = 1e-4;
 noise_power_lat   = 1e-3;

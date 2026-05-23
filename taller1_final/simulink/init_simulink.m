@@ -3,7 +3,7 @@
 % pueda ejecutarse directamente.
 
 project_dir = fileparts(mfilename('fullpath'));
-repo_dir    = fileparts(project_dir);
+repo_dir    = fileparts(fileparts(project_dir));  % simulink/ -> taller1_final/ -> repo
 
 model_path = fullfile(repo_dir, 'drive', 'TDC', '02. TAREAS', ...
     'T1', 'modelo_lin.mat');
